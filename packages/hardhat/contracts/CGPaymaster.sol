@@ -77,6 +77,27 @@ contract CGPaymaster is Ownable {
     /// @dev Byte offset where the org address starts inside paymasterAndData.
     uint256 private constant ORG_DATA_OFFSET = 20;
 
+    // ── Sponsored inner-selector allowlist ───────────────────────────────────
+    // Only non-owner, user-facing selectors are sponsorable. Owner-only admin
+    // ops (createProgram, setBeneficiaries, execute, mint, …) are excluded so
+    // an attacker cannot drain an org's gas budget via reverting calls.
+
+    // CGProgram + CGCrowdfunding (same signatures on both)
+    bytes4 private constant SEL_DONATE = bytes4(keccak256("donate(uint256)"));
+    bytes4 private constant SEL_DONATE_PERMIT =
+        bytes4(keccak256("donateWithPermit(uint256,uint256,uint8,bytes32,bytes32)"));
+    // CGCrowdfunding donor refunds
+    bytes4 private constant SEL_CANCEL_CONTRIBUTION = bytes4(keccak256("cancelContribution()"));
+    bytes4 private constant SEL_REFUND = bytes4(keccak256("refund()"));
+    // CGToken user ops (ERC-1155 + ERC-1155Burnable)
+    bytes4 private constant SEL_SAFE_TRANSFER_FROM =
+        bytes4(keccak256("safeTransferFrom(address,address,uint256,uint256,bytes)"));
+    bytes4 private constant SEL_SAFE_BATCH_TRANSFER_FROM =
+        bytes4(keccak256("safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)"));
+    bytes4 private constant SEL_SET_APPROVAL_FOR_ALL = bytes4(keccak256("setApprovalForAll(address,bool)"));
+    bytes4 private constant SEL_BURN = bytes4(keccak256("burn(address,uint256,uint256)"));
+    bytes4 private constant SEL_BURN_BATCH = bytes4(keccak256("burnBatch(address,uint256[],uint256[])"));
+
     // ── State ─────────────────────────────────────────────────────────────────
 
     /// @notice The ERC-4337 EntryPoint singleton this paymaster is registered with.
@@ -239,16 +260,48 @@ contract CGPaymaster is Ownable {
         return m == address(0) ? owner() : m;
     }
 
-    /// @dev Validates callData encodes a standard execute(address,uint256,bytes) call
-    ///      whose target belongs to the given org.
+    /// @dev Validates callData encodes a standard execute(address,uint256,bytes) call whose
+    ///      target belongs to the given org AND whose inner selector is on the sponsorship
+    ///      allowlist (non-owner ops + CGToken user ops).
+    ///
+    ///      execute(address,uint256,bytes) canonical ABI layout:
+    ///        [0  :  4] outer selector
+    ///        [4  : 36] target          (address, right-aligned in 32 bytes)
+    ///        [36 : 68] value           (uint256)
+    ///        [68 :100] data offset     (= 0x60 for canonical encoding)
+    ///        [100:132] data length     (uint256, must be >= 4 for a real call)
+    ///        [132:136] inner selector  (first 4 bytes of the inner call's calldata)
     function _isValidCall(bytes calldata callData, CGOrganization org) internal view returns (bool) {
-        // Minimum length: 4-byte selector + 32-byte address + 32-byte uint256 = 68 bytes
-        if (callData.length < 68) revert InvalidCallData();
+        // Minimum length: outer header (132) + inner selector (4) = 136 bytes
+        if (callData.length < 136) revert InvalidCallData();
         if (bytes4(callData[0:4]) != EXECUTE_SELECTOR) revert InvalidCallData();
 
-        // ABI-decode target from the first 32-byte argument slot (address is right-aligned)
+        // Reject non-canonical encodings to keep the inner-selector offset fixed at 132.
+        uint256 dataOffset = uint256(bytes32(callData[68:100]));
+        if (dataOffset != 0x60) revert InvalidCallData();
+        uint256 dataLength = uint256(bytes32(callData[100:132]));
+        if (dataLength < 4) revert InvalidCallData();
+
+        bytes4 innerSelector = bytes4(callData[132:136]);
+        if (!_isSponsoredSelector(innerSelector)) revert InvalidCallData();
+
         address target = address(uint160(uint256(bytes32(callData[4:36]))));
         return _isOrgContract(org, target);
+    }
+
+    /// @dev Allowlist of inner selectors the paymaster will sponsor. Limited to user-facing
+    ///      flows so owner-only admin reverts cannot drain an org's budget.
+    function _isSponsoredSelector(bytes4 sel) internal pure returns (bool) {
+        return
+            sel == SEL_DONATE ||
+            sel == SEL_DONATE_PERMIT ||
+            sel == SEL_CANCEL_CONTRIBUTION ||
+            sel == SEL_REFUND ||
+            sel == SEL_SAFE_TRANSFER_FROM ||
+            sel == SEL_SAFE_BATCH_TRANSFER_FROM ||
+            sel == SEL_SET_APPROVAL_FOR_ALL ||
+            sel == SEL_BURN ||
+            sel == SEL_BURN_BATCH;
     }
 
     /// @dev Returns true if `target` is a contract that belongs to `org`:

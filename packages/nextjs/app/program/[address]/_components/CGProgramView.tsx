@@ -119,6 +119,8 @@ function useContractRead<T>(address: Address, functionName: string, args?: reado
 function useCGProgramWrite(programAddress: Address, orgAddress: Address | undefined) {
   const { write: sponsoredWrite } = useSponsoredWrite(orgAddress);
 
+  // All CGProgram functions reached through this factory are onlyOwner — paymaster
+  // refuses to sponsor them, so always send as a regular tx.
   return async (functionName: string, args?: readonly unknown[], value?: bigint) => {
     return sponsoredWrite({
       address: programAddress,
@@ -126,6 +128,7 @@ function useCGProgramWrite(programAddress: Address, orgAddress: Address | undefi
       functionName,
       args,
       value,
+      sponsored: false,
     });
   };
 }
@@ -1014,6 +1017,7 @@ function DirectTransfersPanel({
         abi: cgProgramAbi,
         functionName: "returnUntracked",
         args: [returnTo as Address, amount],
+        sponsored: false,
       });
       if (success) {
         setReturnTo("");
@@ -1038,6 +1042,7 @@ function DirectTransfersPanel({
         abi: cgProgramAbi,
         functionName: "sweepUntracked",
         args: [sweepTo as Address],
+        sponsored: false,
       });
       if (success) {
         setSweepTo("");

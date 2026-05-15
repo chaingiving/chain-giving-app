@@ -1,13 +1,4 @@
-import {
-  Abi,
-  Address,
-  Chain,
-  WalletClient,
-  createWalletClient,
-  custom,
-  encodeFunctionData,
-  numberToHex,
-} from "viem";
+import { Abi, Address, Chain, WalletClient, createWalletClient, custom, encodeFunctionData, numberToHex } from "viem";
 import { writeContract as viemWriteContract } from "viem/actions";
 import { useAccount, useSendCalls, useWalletClient } from "wagmi";
 import { useTransactor } from "~~/hooks/scaffold-eth";
@@ -35,11 +26,7 @@ const toNumericChainId = (raw: number | string | undefined): number | undefined 
 const wrapProvider = (provider: { request: (args: any) => Promise<unknown> }) => ({
   request: async (args: any) => {
     const result = await provider.request(args);
-    if (
-      args?.method === "eth_chainId" &&
-      typeof result === "string" &&
-      result.startsWith("eip155:")
-    ) {
+    if (args?.method === "eth_chainId" && typeof result === "string" && result.startsWith("eip155:")) {
       const tail = result.split(":")[1];
       const n = Number(tail);
       if (Number.isFinite(n)) return numberToHex(n);
@@ -61,6 +48,12 @@ type ContractCall = {
   functionName: string;
   args?: readonly unknown[];
   value?: bigint;
+  /**
+   * Set to `false` to bypass paymaster sponsorship and send a plain transaction
+   * even when the wallet supports EIP-5792 and the org has budget. Use for
+   * owner-only ops that the CGPaymaster allowlist will reject anyway.
+   */
+  sponsored?: boolean;
 };
 
 /**
@@ -86,7 +79,8 @@ export function useSponsoredWrite(orgAddress: Address | undefined) {
 
   const write = async (call: ContractCall): Promise<boolean> => {
     try {
-      if (isSponsorshipAvailable && orgAddress) {
+      const useSponsorship = call.sponsored !== false && isSponsorshipAvailable && orgAddress;
+      if (useSponsorship) {
         // Use EIP-5792 sendCalls with paymasterService capability
         const paymasterServiceUrl = `${window.location.origin}/api/paymaster`;
 
@@ -119,7 +113,7 @@ export function useSponsoredWrite(orgAddress: Address | undefined) {
       // `eth_chainId` response sanitised, then call viem.writeContract directly
       // with an explicit Chain object resolved from wagmiConfig.
       if (!walletClient) throw new Error("Wallet not connected");
-      const chain = chainId ? wagmiConfig.chains.find(c => c.id === chainId) : undefined;
+      const chain = chainId ? wagmiConfig.chains.find((c: Chain) => c.id === chainId) : undefined;
       if (!chain) throw new Error(`Unsupported chain: ${String(rawChainId)}`);
 
       const safeClient = buildSafeWalletClient(walletClient, chain);

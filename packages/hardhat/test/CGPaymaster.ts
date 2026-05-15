@@ -12,8 +12,13 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** ABI-encodes an execute(address,uint256,bytes) call as a smart-account would. */
-function encodeExecute(target: string, value = 0n, data = "0x"): string {
+/** Default inner call used by encodeExecute — uses an allowlisted selector so paymaster
+ *  validation tests can focus on org/target/balance logic without crafting payloads. */
+const DEFAULT_INNER_DATA = new ethers.Interface(["function donate(uint256)"]).encodeFunctionData("donate", [1n]);
+
+/** ABI-encodes an execute(address,uint256,bytes) call as a smart-account would.
+ *  `data` defaults to a `donate(1)` payload so it passes CGPaymaster's selector allowlist. */
+function encodeExecute(target: string, value = 0n, data: string = DEFAULT_INNER_DATA): string {
   const iface = new ethers.Interface(["function execute(address,uint256,bytes)"]);
   return iface.encodeFunctionData("execute", [target, value, data]);
 }
@@ -316,6 +321,44 @@ describe("CGPaymaster", function () {
       await expect(
         cgPaymaster.connect(alice).validatePaymasterUserOp(userOp, USER_OP_HASH, MAX_COST),
       ).to.be.revertedWithCustomError(cgPaymaster, "OnlyEntryPoint");
+    });
+
+    it("reverts if inner selector is not on the sponsorship allowlist", async () => {
+      const { cgPaymaster, orgAddress, programAddress, mockEntryPoint, alice } = await deployFixture();
+
+      await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
+      const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
+
+      // setBeneficiaries is an owner-only admin op — must NOT be sponsorable.
+      const adminIface = new ethers.Interface(["function setBeneficiaries(uint256,address[],uint256[])"]);
+      const innerData = adminIface.encodeFunctionData("setBeneficiaries", [0n, [alice.address], [1n]]);
+      const userOp = {
+        ...buildUserOp(alice.address, programAddress, await cgPaymaster.getAddress(), orgAddress),
+        callData: encodeExecute(programAddress, 0n, innerData),
+      };
+
+      await expect(
+        cgPaymaster.connect(entryPointSigner).validatePaymasterUserOp(userOp, USER_OP_HASH, MAX_COST),
+      ).to.be.revertedWithCustomError(cgPaymaster, "InvalidCallData");
+    });
+
+    it("sponsors CGToken user ops (safeTransferFrom on the token)", async () => {
+      const { cgPaymaster, orgAddress, tokenAddress, mockEntryPoint, alice, bob } = await deployFixture();
+
+      await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
+      const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
+
+      const tokenIface = new ethers.Interface(["function safeTransferFrom(address,address,uint256,uint256,bytes)"]);
+      const innerData = tokenIface.encodeFunctionData("safeTransferFrom", [alice.address, bob.address, 0n, 1n, "0x"]);
+      const userOp = {
+        ...buildUserOp(alice.address, tokenAddress, await cgPaymaster.getAddress(), orgAddress),
+        callData: encodeExecute(tokenAddress, 0n, innerData),
+      };
+
+      const [, validationData] = await cgPaymaster
+        .connect(entryPointSigner)
+        .validatePaymasterUserOp.staticCall(userOp, USER_OP_HASH, MAX_COST);
+      expect(validationData).to.equal(0n);
     });
   });
 

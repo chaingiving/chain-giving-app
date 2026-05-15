@@ -70,8 +70,8 @@ export const CGOrganizationView = ({ address }: { address: Address }) => {
     { active: 0, completed: 0, cancelled: 0 },
   );
 
-  // Sponsored writes for org operations (e.g., createProgram)
-  const { write: sponsoredWrite, isSponsorshipAvailable } = useSponsoredWrite(address);
+  // createProgram is onlyOwner — not sponsored by CGPaymaster; this hook routes through a plain tx.
+  const { write: sponsoredWrite } = useSponsoredWrite(address);
 
   const { data: registryOwner } = useScaffoldReadContract({
     contractName: "CGRegistry",
@@ -112,6 +112,7 @@ export const CGOrganizationView = ({ address }: { address: Address }) => {
       abi: cgOrganizationAbi,
       functionName: "createProgram",
       args: [newProgramName.trim(), lockDistributions],
+      sponsored: false,
     });
     if (success) {
       setNewProgramName("");
@@ -200,7 +201,7 @@ export const CGOrganizationView = ({ address }: { address: Address }) => {
                 onClick={handleCreateProgram}
                 disabled={!newProgramName.trim()}
               >
-                {isSponsorshipAvailable ? "Create Program (Gas Sponsored)" : "Create Program"}
+                Create Program
               </button>
             </div>
           </div>
