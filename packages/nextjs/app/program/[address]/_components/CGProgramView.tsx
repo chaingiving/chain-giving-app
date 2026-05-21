@@ -28,6 +28,7 @@ import { cgOrganizationAbi } from "~~/contracts/cgOrganizationAbi";
 import { cgProgramAbi } from "~~/contracts/cgProgramAbi";
 import { DonationCurrency, findCurrency, getDonationCurrencies } from "~~/contracts/donationCurrencies";
 import { useBlockExplorerLink, useTargetNetwork } from "~~/hooks/scaffold-eth";
+import { useEffectiveAddress } from "~~/hooks/useEffectiveAddress";
 import { useProgramOrganization } from "~~/hooks/useProgramOrganization";
 import { useSponsoredWrite } from "~~/hooks/useSponsoredWrite";
 import { getParsedError, notification } from "~~/utils/scaffold-eth";
@@ -441,6 +442,10 @@ function CrowdfundingSection({
   const cfLink = useBlockExplorerLink(crowdfundingInfo?.addr);
   const { write: sponsoredWrite } = useSponsoredWrite(orgAddress);
   const { writeContractAsync: writeToken } = useWriteContract();
+  // Donations land under msg.sender. For the Kernel sponsorship path msg.sender
+  // is the user's counterfactual Kernel account, NOT their EOA — so contribution
+  // lookups, allowance, and balance all need to use the effective address.
+  const { address: donorAddress } = useEffectiveAddress();
 
   const cfAddr = crowdfundingInfo?.addr;
   const isValidCf = cfAddr && !isAddressEqual(cfAddr, zeroAddress);
@@ -456,17 +461,17 @@ function CrowdfundingSection({
     address: isValidCf ? cfAddr : undefined,
     abi: cgCrowdfundingAbi,
     functionName: "contributions",
-    args: connectedAddress ? [connectedAddress] : undefined,
-    query: { enabled: !!isValidCf && !!connectedAddress, refetchInterval: 5000 },
+    args: donorAddress ? [donorAddress] : undefined,
+    query: { enabled: !!isValidCf && !!donorAddress, refetchInterval: 5000 },
   });
 
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
     address: crowdfundingInfo?.currency,
     abi: erc20Abi,
     functionName: "allowance",
-    args: connectedAddress ? [connectedAddress, programAddress] : undefined,
+    args: donorAddress ? [donorAddress, programAddress] : undefined,
     query: {
-      enabled: !!crowdfundingInfo?.currency && !!connectedAddress && !!currency,
+      enabled: !!crowdfundingInfo?.currency && !!donorAddress && !!currency,
       refetchInterval: 5000,
     },
   });
@@ -475,9 +480,9 @@ function CrowdfundingSection({
     address: crowdfundingInfo?.currency,
     abi: erc20Abi,
     functionName: "balanceOf",
-    args: connectedAddress ? [connectedAddress] : undefined,
+    args: donorAddress ? [donorAddress] : undefined,
     query: {
-      enabled: !!crowdfundingInfo?.currency && !!connectedAddress && !!currency,
+      enabled: !!crowdfundingInfo?.currency && !!donorAddress && !!currency,
       refetchInterval: 5000,
     },
   });
@@ -807,7 +812,7 @@ function CrowdfundingSection({
                           </span>
                         </span>
                         <Link
-                          href={`/wallet/${connectedAddress}`}
+                          href={`/wallet/${donorAddress ?? connectedAddress}`}
                           className="btn btn-xs btn-ghost btn-link no-underline px-1 gap-1"
                         >
                           <WalletIcon className="h-3.5 w-3.5" />

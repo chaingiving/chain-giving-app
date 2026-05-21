@@ -4147,6 +4147,7 @@ __metadata:
     next: "npm:~16.2.4"
     next-nprogress-bar: "npm:~2.4.7"
     next-themes: "npm:~0.4.6"
+    permissionless: "npm:^0.3.5"
     postcss: "npm:~8.4.45"
     prettier: "npm:~3.5.3"
     qrcode.react: "npm:~4.0.1"
@@ -15431,6 +15432,19 @@ __metadata:
   version: 1.2.0
   resolution: "pend@npm:1.2.0"
   checksum: 10/6c72f5243303d9c60bd98e6446ba7d30ae29e3d56fdb6fae8767e8ba6386f33ee284c97efe3230a0d0217e2b1723b8ab490b1bbf34fcbb2180dbc8a9de47850d
+  languageName: node
+  linkType: hard
+
+"permissionless@npm:^0.3.5":
+  version: 0.3.5
+  resolution: "permissionless@npm:0.3.5"
+  peerDependencies:
+    ox: ^0.11.3
+    viem: ^2.44.4
+  peerDependenciesMeta:
+    ox:
+      optional: true
+  checksum: 10/bbbbbb11b719adbddc207bf30c409305ae0378cc47031185d771baab2d298af65d195760182f3f7106e51669979cd6a29a6a0b64a742d8ecae4fa3e615627441
   languageName: node
   linkType: hard
 

@@ -3,6 +3,7 @@ import { writeContract as viemWriteContract } from "viem/actions";
 import { useAccount, useSendCalls, useWalletClient } from "wagmi";
 import { useTransactor } from "~~/hooks/scaffold-eth";
 import { useOrgGasSponsorship } from "~~/hooks/useOrgGasSponsorship";
+import { useSponsoredUserOp } from "~~/hooks/useSponsoredUserOp";
 import { wagmiConfig } from "~~/services/web3/wagmiConfig";
 import { getParsedError, notification } from "~~/utils/scaffold-eth";
 
@@ -50,40 +51,46 @@ type ContractCall = {
   value?: bigint;
   /**
    * Set to `false` to bypass paymaster sponsorship and send a plain transaction
-   * even when the wallet supports EIP-5792 and the org has budget. Use for
-   * owner-only ops that the CGPaymaster allowlist will reject anyway.
+   * directly from the connected wallet. Use for owner-only admin ops that the
+   * CGPaymaster allowlist would reject anyway (createProgram, setBeneficiaries,
+   * execute, mint, …). Donations and other sponsorable ops should leave this
+   * unset.
    */
   sponsored?: boolean;
 };
 
 /**
- * Hook that provides a `write` function for sending contract calls with
- * automatic gas sponsorship via EIP-5792 + CGPaymaster when available,
- * falling back to a regular `writeContract` call otherwise.
+ * Send a contract call with automatic gas sponsorship.
  *
- * Usage:
- * ```ts
- * const { write, isSponsorshipAvailable } = useSponsoredWrite(orgAddress);
- * await write({ address, abi, functionName, args });
- * ```
+ * Resolution order for sponsorable calls (sponsored !== false):
+ *   1. **EIP-5792** when the wallet is a smart account that advertises
+ *      paymasterService support (Coinbase Smart Wallet, MetaMask Smart Account, Safe).
+ *   2. **Kernel-via-Pimlico** when the wallet is EOA-backed (social, email,
+ *      MetaMask EOA, WC EOAs) — we wrap it in a counterfactual Kernel v3.1
+ *      account and submit the UserOp through our bundler proxy.
+ *   3. No fallback — if neither path is viable, the call fails with a clear
+ *      error. There is intentionally no user-paid donation path; admin orgs
+ *      must top up CGPaymaster for their donors.
+ *
+ * Admin ops (`sponsored: false`) always use the direct wallet path.
  */
 export function useSponsoredWrite(orgAddress: Address | undefined) {
   const { chainId: rawChainId } = useAccount();
   const chainId = toNumericChainId(rawChainId as number | string | undefined);
-  const { isSponsorshipAvailable, isPaymasterSupported, hasBudget, orgBalance, orgBalanceFormatted, isEIP5792Wallet } =
+  const { sponsorshipMode, hasBudget, orgBalance, orgBalanceFormatted, isPaymasterSupported, isEIP5792Wallet } =
     useOrgGasSponsorship(orgAddress);
 
   const { sendCallsAsync } = useSendCalls();
   const { data: walletClient } = useWalletClient();
+  const { sendCall: sendKernelCall, smartAddress } = useSponsoredUserOp(orgAddress);
   const writeTx = useTransactor();
 
   const write = async (call: ContractCall): Promise<boolean> => {
     try {
-      const useSponsorship = call.sponsored !== false && isSponsorshipAvailable && orgAddress;
-      if (useSponsorship) {
-        // Use EIP-5792 sendCalls with paymasterService capability
-        const paymasterServiceUrl = `${window.location.origin}/api/paymaster`;
+      const wantSponsored = call.sponsored !== false;
 
+      if (wantSponsored && sponsorshipMode === "eip5792") {
+        const paymasterServiceUrl = `${window.location.origin}/api/paymaster`;
         await sendCallsAsync({
           calls: [
             {
@@ -104,14 +111,33 @@ export function useSponsoredWrite(orgAddress: Address | undefined) {
           },
           chainId,
         } as any);
-
         notification.success("Transaction sponsored by organization gas budget");
         return true;
       }
 
-      // Fallback: build a wallet client backed by Reown's provider but with the
-      // `eth_chainId` response sanitised, then call viem.writeContract directly
-      // with an explicit Chain object resolved from wagmiConfig.
+      if (wantSponsored && sponsorshipMode === "kernel") {
+        await sendKernelCall({
+          address: call.address,
+          abi: call.abi,
+          functionName: call.functionName,
+          args: call.args,
+          value: call.value,
+        });
+        notification.success("Transaction sponsored by organization gas budget");
+        return true;
+      }
+
+      if (wantSponsored && sponsorshipMode === "none") {
+        // No fallback. Surface why so the org admin (or the donor) can act.
+        const reason = !orgAddress
+          ? "Sponsoring organization unknown"
+          : !hasBudget
+            ? "Organization has no gas budget — ask the org to top up"
+            : "Gas sponsorship is disabled or unavailable for your wallet";
+        throw new Error(reason);
+      }
+
+      // Admin op (sponsored: false) — send directly from the connected wallet.
       if (!walletClient) throw new Error("Wallet not connected");
       const chain = chainId ? wagmiConfig.chains.find((c: Chain) => c.id === chainId) : undefined;
       if (!chain) throw new Error(`Unsupported chain: ${String(rawChainId)}`);
@@ -139,11 +165,16 @@ export function useSponsoredWrite(orgAddress: Address | undefined) {
 
   return {
     write,
-    isSponsorshipAvailable,
+    sponsorshipMode,
+    /** Convenience: true when either sponsored path is viable for this org+wallet. */
+    isSponsorshipAvailable: sponsorshipMode !== "none",
     isPaymasterSupported,
     hasBudget,
     isEIP5792Wallet,
     orgBalance,
     orgBalanceFormatted,
+    /** Kernel smart-account address (defined once the user has sent at least one
+     *  UserOp this session; use useEffectiveAddress for the persistent display value). */
+    kernelAddress: smartAddress,
   };
 }

@@ -46,15 +46,30 @@ export function useOrgGasSponsorship(orgAddress: Address | undefined) {
   const chainCapabilities = walletCapabilities?.[currentChainId];
   const isPaymasterSupported = !!chainCapabilities?.paymasterService?.supported;
 
-  // Gas sponsorship is available when:
-  // 1. CGPaymaster is deployed
-  // 2. The org has a positive gas budget
-  // 3. The wallet supports paymasterService capability
-  // 4. The page is served over HTTPS (wallets reject http:// paymaster URLs)
   const balance = orgBalance as bigint | undefined;
   const hasBudget = balance !== undefined && balance > 0n;
+  // EIP-5792 wallets reject http:// paymasterService URLs. The Kernel path uses
+  // our own same-origin /api/paymaster fetch so it doesn't depend on this gate.
   const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
-  const isSponsorshipAvailable = !!paymasterInfo?.address && hasBudget && isPaymasterSupported && isHttps && userOptedIn;
+
+  // Sponsorship resolution order:
+  //   "eip5792" — wallet is itself a smart account that handles the paymasterService
+  //               capability (Coinbase Smart Wallet, MetaMask Smart Account, Safe).
+  //   "kernel"  — wallet is EOA-backed (social, email, MetaMask EOA, WC EOAs);
+  //               we wrap it in a counterfactual Kernel v3.1 account.
+  //   "none"    — no budget, user opted out, or the page isn't HTTPS (5792 case).
+  const eip5792Available =
+    !!paymasterInfo?.address && hasBudget && userOptedIn && isHttps && isEIP5792Wallet && isPaymasterSupported;
+  // Kernel covers the residual case: EOA-backed wallet, org has budget.
+  const kernelAvailable =
+    !!paymasterInfo?.address && hasBudget && userOptedIn && !(isEIP5792Wallet && isPaymasterSupported);
+
+  const sponsorshipMode: "eip5792" | "kernel" | "none" = eip5792Available
+    ? "eip5792"
+    : kernelAvailable
+      ? "kernel"
+      : "none";
+  const isSponsorshipAvailable = sponsorshipMode !== "none";
 
   return {
     /** CGPaymaster contract address */
@@ -67,11 +82,13 @@ export function useOrgGasSponsorship(orgAddress: Address | undefined) {
     hasBudget,
     /** Current org manager address */
     orgManager: orgManager as Address | undefined,
-    /** Whether the connected wallet supports EIP-5792 */
+    /** Whether the connected wallet handled the EIP-5792 wallet_getCapabilities RPC */
     isEIP5792Wallet,
-    /** Whether the wallet supports paymasterService on this chain */
+    /** Whether the wallet advertises paymasterService support on this chain */
     isPaymasterSupported,
-    /** Whether gas sponsorship is fully available (budget + wallet support) */
+    /** Which sponsorship code path will execute for this user on this org */
+    sponsorshipMode,
+    /** Whether gas sponsorship is fully available via either path */
     isSponsorshipAvailable,
     /** Loading state */
     isLoading: balanceLoading,

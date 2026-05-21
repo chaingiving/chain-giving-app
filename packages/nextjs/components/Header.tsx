@@ -5,7 +5,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { hardhat } from "viem/chains";
-import { useAccount } from "wagmi";
 import {
   Bars3Icon,
   BugAntIcon,
@@ -17,6 +16,7 @@ import {
 import { SwitchTheme } from "~~/components/SwitchTheme";
 import { FaucetButton, RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
 import { useOutsideClick, useTargetNetwork } from "~~/hooks/scaffold-eth";
+import { useEffectiveAddress } from "~~/hooks/useEffectiveAddress";
 import { useIsAdmin } from "~~/hooks/useIsAdmin";
 
 type HeaderMenuLink = {
@@ -44,16 +44,19 @@ export const menuLinks: HeaderMenuLink[] = [
 
 export const HeaderMenuLinks = () => {
   const pathname = usePathname();
-  const { address: connectedAddress } = useAccount();
+  // Use the effective on-chain identity so the "Wallet" link points to the
+  // Kernel address for social/email logins (where donations land) rather than
+  // the raw EOA — they'd otherwise see an empty wallet page.
+  const { address: effectiveAddress } = useEffectiveAddress();
   const isAdmin = useIsAdmin();
 
   const allLinks: HeaderMenuLink[] = [
     ...menuLinks,
-    ...(connectedAddress
+    ...(effectiveAddress
       ? [
           {
             label: "Wallet",
-            href: `/wallet/${connectedAddress}`,
+            href: `/wallet/${effectiveAddress}`,
             icon: <WalletIcon className="h-4 w-4" />,
           },
         ]

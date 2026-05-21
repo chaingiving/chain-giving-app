@@ -16,6 +16,7 @@ import { cgTokenAbi } from "~~/contracts/cgTokenAbi";
 import { DonationCurrency, getDonationCurrencies } from "~~/contracts/donationCurrencies";
 import { useBlockExplorerLink, useScaffoldReadContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { useCGTokenWrite } from "~~/hooks/useCGTokenWrite";
+import { useEffectiveAddress } from "~~/hooks/useEffectiveAddress";
 import { useSponsoredGasPreference } from "~~/hooks/useSponsoredGasPreference";
 import { getParsedError, notification } from "~~/utils/scaffold-eth";
 
@@ -658,8 +659,14 @@ function SponsoredGasToggle() {
 
 export const WalletView = ({ address }: { address: Address }) => {
   const { address: connectedAddress } = useAccount();
+  // For Kernel-sponsored users the route address is their counterfactual Kernel,
+  // not their EOA. Match against the effective on-chain identity so the page
+  // still recognises this as the user's own wallet.
+  const { address: effectiveAddress } = useEffectiveAddress();
 
-  const isOwnWallet = connectedAddress ? isAddressEqual(connectedAddress, address) : false;
+  const isOwnWallet =
+    (effectiveAddress && isAddressEqual(effectiveAddress, address)) ||
+    (connectedAddress ? isAddressEqual(connectedAddress, address) : false);
   const addressLink = useBlockExplorerLink(address);
 
   const { data: orgAddresses, isLoading } = useScaffoldReadContract({

@@ -16,30 +16,54 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
  *  validation tests can focus on org/target/balance logic without crafting payloads. */
 const DEFAULT_INNER_DATA = new ethers.Interface(["function donate(uint256)"]).encodeFunctionData("donate", [1n]);
 
-/** ABI-encodes an execute(address,uint256,bytes) call as a smart-account would.
+/** ABI-encodes an execute(address,uint256,bytes) call (SimpleAccount / Coinbase Smart Wallet).
  *  `data` defaults to a `donate(1)` payload so it passes CGPaymaster's selector allowlist. */
 function encodeExecute(target: string, value = 0n, data: string = DEFAULT_INNER_DATA): string {
   const iface = new ethers.Interface(["function execute(address,uint256,bytes)"]);
   return iface.encodeFunctionData("execute", [target, value, data]);
 }
 
-/** Builds the paymasterAndData field: paymaster address (20 b) + org address (20 b). */
-function buildPaymasterAndData(paymasterAddress: string, orgAddress: string): string {
-  return ethers.concat([paymasterAddress, orgAddress]);
+/** ABI-encodes an ERC-7579 execute(bytes32 mode, bytes executionData) call (Kernel v3).
+ *  Mode = single execution (callType 0x00). executionData is the packed encoding
+ *  abi.encodePacked(target, value, data) — NOT standard ABI.
+ *
+ *  `mode` lets tests override the mode word to exercise rejection paths. */
+function encodeExecuteERC7579(
+  target: string,
+  value = 0n,
+  data: string = DEFAULT_INNER_DATA,
+  mode: string = ethers.ZeroHash, // callType=0x00 (single), execType=0x00, rest 0
+): string {
+  const iface = new ethers.Interface(["function execute(bytes32,bytes)"]);
+  const executionData = ethers.concat([target, ethers.zeroPadValue(ethers.toBeHex(value), 32), data]);
+  return iface.encodeFunctionData("execute", [mode, executionData]);
 }
 
-/** Returns a minimal UserOperation targeting `callTarget` and sponsored by `org`. */
+/** Builds the v0.7 paymasterAndData field:
+ *    [0:20]  paymaster address
+ *    [20:36] verificationGasLimit (uint128)
+ *    [36:52] postOpGasLimit       (uint128)
+ *    [52:72] sponsoring org address                                           */
+function buildPaymasterAndData(paymasterAddress: string, orgAddress: string): string {
+  return ethers.concat([
+    paymasterAddress,
+    ethers.zeroPadValue(ethers.toBeHex(0x10000n), 16), // verificationGasLimit
+    ethers.zeroPadValue(ethers.toBeHex(0x8000n), 16), // postOpGasLimit
+    orgAddress,
+  ]);
+}
+
+/** Returns a minimal v0.7 PackedUserOperation targeting `callTarget` and sponsored by `org`.
+ *  accountGasLimits and gasFees are zeroed — the paymaster never reads them. */
 function buildUserOp(sender: string, callTarget: string, paymasterAddress: string, orgAddress: string): object {
   return {
     sender,
     nonce: 0n,
     initCode: "0x",
     callData: encodeExecute(callTarget),
-    callGasLimit: 100_000n,
-    verificationGasLimit: 100_000n,
+    accountGasLimits: ethers.ZeroHash,
     preVerificationGas: 50_000n,
-    maxFeePerGas: ethers.parseUnits("1", "gwei"),
-    maxPriorityFeePerGas: ethers.parseUnits("1", "gwei"),
+    gasFees: ethers.ZeroHash,
     paymasterAndData: buildPaymasterAndData(paymasterAddress, orgAddress),
     signature: "0x",
   };
@@ -49,6 +73,10 @@ const USER_OP_HASH = ethers.ZeroHash;
 const MAX_COST = ethers.parseEther("0.005");
 const DEPOSIT = ethers.parseEther("0.1");
 const LOW_THRESHOLD = ethers.parseEther("0.01");
+
+const POST_OP_MODE_SUCCEEDED = 0;
+const POST_OP_MODE_REVERTED = 1;
+const POST_OP_MODE_POST_OP_REVERTED = 2;
 
 // ── Fixture ───────────────────────────────────────────────────────────────────
 
@@ -172,9 +200,9 @@ describe("CGPaymaster", function () {
     });
   });
 
-  // ── validatePaymasterUserOp ─────────────────────────────────────────────────
+  // ── validatePaymasterUserOp — SimpleAccount calldata ────────────────────────
 
-  describe("validatePaymasterUserOp", function () {
+  describe("validatePaymasterUserOp (SimpleAccount / execute(address,uint256,bytes))", function () {
     it("validates successfully when org has balance and target is a program", async () => {
       const { cgPaymaster, orgAddress, programAddress, mockEntryPoint, alice } = await deployFixture();
 
@@ -183,12 +211,11 @@ describe("CGPaymaster", function () {
 
       const userOp = buildUserOp(alice.address, programAddress, await cgPaymaster.getAddress(), orgAddress);
 
-      // staticCall to read return values without sending a transaction
       const [, validationData] = await cgPaymaster
         .connect(entryPointSigner)
         .validatePaymasterUserOp.staticCall(userOp, USER_OP_HASH, MAX_COST);
 
-      expect(validationData).to.equal(0n); // 0 = valid
+      expect(validationData).to.equal(0n);
     });
 
     it("validates successfully when target is the CGToken (child of program)", async () => {
@@ -265,7 +292,6 @@ describe("CGPaymaster", function () {
       await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
       const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
 
-      // Target is a random EOA — not in the org
       const userOp = buildUserOp(
         alice.address,
         alice.address, // not an org contract
@@ -294,13 +320,13 @@ describe("CGPaymaster", function () {
       ).to.be.revertedWithCustomError(cgPaymaster, "InvalidCallData");
     });
 
-    it("reverts if callData uses an unexpected selector", async () => {
+    it("reverts if callData uses an unexpected outer selector", async () => {
       const { cgPaymaster, orgAddress, programAddress, mockEntryPoint, alice } = await deployFixture();
 
       await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
       const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
 
-      // Swap selector to executeBatch — not supported
+      // executeBatch is not in the allowlist — should revert
       const iface = new ethers.Interface(["function executeBatch(address[],uint256[],bytes[])"]);
       const badCallData = iface.encodeFunctionData("executeBatch", [[programAddress], [0n], ["0x"]]);
 
@@ -360,6 +386,163 @@ describe("CGPaymaster", function () {
         .validatePaymasterUserOp.staticCall(userOp, USER_OP_HASH, MAX_COST);
       expect(validationData).to.equal(0n);
     });
+
+    it("reverts if paymasterAndData is shorter than 72 bytes", async () => {
+      const { cgPaymaster, orgAddress, programAddress, mockEntryPoint, alice } = await deployFixture();
+
+      await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
+      const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
+
+      // Truncated paymasterAndData — missing the trailing org address bytes
+      const userOp = {
+        ...buildUserOp(alice.address, programAddress, await cgPaymaster.getAddress(), orgAddress),
+        paymasterAndData: ethers.concat([
+          await cgPaymaster.getAddress(),
+          ethers.zeroPadValue(ethers.toBeHex(0n), 16),
+          ethers.zeroPadValue(ethers.toBeHex(0n), 16),
+          "0x1234", // only 2 bytes of org address — too short
+        ]),
+      };
+
+      await expect(
+        cgPaymaster.connect(entryPointSigner).validatePaymasterUserOp(userOp, USER_OP_HASH, MAX_COST),
+      ).to.be.revertedWithCustomError(cgPaymaster, "InvalidPaymasterData");
+    });
+  });
+
+  // ── validatePaymasterUserOp — ERC-7579 / Kernel calldata ────────────────────
+
+  describe("validatePaymasterUserOp (ERC-7579 / execute(bytes32,bytes))", function () {
+    it("validates Kernel single-execution calldata targeting a program", async () => {
+      const { cgPaymaster, orgAddress, programAddress, mockEntryPoint, alice } = await deployFixture();
+
+      await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
+      const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
+
+      const userOp = {
+        ...buildUserOp(alice.address, programAddress, await cgPaymaster.getAddress(), orgAddress),
+        callData: encodeExecuteERC7579(programAddress),
+      };
+
+      const [, validationData] = await cgPaymaster
+        .connect(entryPointSigner)
+        .validatePaymasterUserOp.staticCall(userOp, USER_OP_HASH, MAX_COST);
+      expect(validationData).to.equal(0n);
+    });
+
+    it("validates Kernel calldata targeting the CGToken", async () => {
+      const { cgPaymaster, orgAddress, tokenAddress, mockEntryPoint, alice, bob } = await deployFixture();
+
+      await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
+      const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
+
+      const tokenIface = new ethers.Interface(["function safeTransferFrom(address,address,uint256,uint256,bytes)"]);
+      const innerData = tokenIface.encodeFunctionData("safeTransferFrom", [alice.address, bob.address, 0n, 1n, "0x"]);
+
+      const userOp = {
+        ...buildUserOp(alice.address, tokenAddress, await cgPaymaster.getAddress(), orgAddress),
+        callData: encodeExecuteERC7579(tokenAddress, 0n, innerData),
+      };
+
+      const [, validationData] = await cgPaymaster
+        .connect(entryPointSigner)
+        .validatePaymasterUserOp.staticCall(userOp, USER_OP_HASH, MAX_COST);
+      expect(validationData).to.equal(0n);
+    });
+
+    it("rejects Kernel batch execution (callType 0x01)", async () => {
+      const { cgPaymaster, orgAddress, programAddress, mockEntryPoint, alice } = await deployFixture();
+
+      await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
+      const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
+
+      // Mode with callType=0x01 in the high byte
+      const batchMode = "0x01" + "00".repeat(31);
+      const userOp = {
+        ...buildUserOp(alice.address, programAddress, await cgPaymaster.getAddress(), orgAddress),
+        callData: encodeExecuteERC7579(programAddress, 0n, DEFAULT_INNER_DATA, batchMode),
+      };
+
+      await expect(
+        cgPaymaster.connect(entryPointSigner).validatePaymasterUserOp(userOp, USER_OP_HASH, MAX_COST),
+      ).to.be.revertedWithCustomError(cgPaymaster, "InvalidCallData");
+    });
+
+    it("rejects Kernel delegatecall execution (callType 0xff)", async () => {
+      const { cgPaymaster, orgAddress, programAddress, mockEntryPoint, alice } = await deployFixture();
+
+      await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
+      const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
+
+      const delegateMode = "0xff" + "00".repeat(31);
+      const userOp = {
+        ...buildUserOp(alice.address, programAddress, await cgPaymaster.getAddress(), orgAddress),
+        callData: encodeExecuteERC7579(programAddress, 0n, DEFAULT_INNER_DATA, delegateMode),
+      };
+
+      await expect(
+        cgPaymaster.connect(entryPointSigner).validatePaymasterUserOp(userOp, USER_OP_HASH, MAX_COST),
+      ).to.be.revertedWithCustomError(cgPaymaster, "InvalidCallData");
+    });
+
+    it("rejects ERC-7579 with target outside the org", async () => {
+      const { cgPaymaster, orgAddress, mockEntryPoint, alice } = await deployFixture();
+
+      await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
+      const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
+
+      const userOp = {
+        ...buildUserOp(alice.address, alice.address, await cgPaymaster.getAddress(), orgAddress),
+        callData: encodeExecuteERC7579(alice.address),
+      };
+
+      await expect(
+        cgPaymaster.connect(entryPointSigner).validatePaymasterUserOp(userOp, USER_OP_HASH, MAX_COST),
+      ).to.be.revertedWithCustomError(cgPaymaster, "InvalidCallTarget");
+    });
+
+    it("rejects ERC-7579 with disallowed inner selector", async () => {
+      const { cgPaymaster, orgAddress, programAddress, mockEntryPoint, alice } = await deployFixture();
+
+      await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
+      const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
+
+      const adminIface = new ethers.Interface(["function setBeneficiaries(uint256,address[],uint256[])"]);
+      const adminData = adminIface.encodeFunctionData("setBeneficiaries", [0n, [alice.address], [1n]]);
+
+      const userOp = {
+        ...buildUserOp(alice.address, programAddress, await cgPaymaster.getAddress(), orgAddress),
+        callData: encodeExecuteERC7579(programAddress, 0n, adminData),
+      };
+
+      await expect(
+        cgPaymaster.connect(entryPointSigner).validatePaymasterUserOp(userOp, USER_OP_HASH, MAX_COST),
+      ).to.be.revertedWithCustomError(cgPaymaster, "InvalidCallData");
+    });
+
+    it("rejects ERC-7579 with non-canonical data offset", async () => {
+      const { cgPaymaster, orgAddress, programAddress, mockEntryPoint, alice } = await deployFixture();
+
+      await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
+      const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
+
+      // Build a valid Kernel calldata then mutate bytes [36:68] (the bytes offset)
+      // from 0x40 to 0x80.
+      const valid = encodeExecuteERC7579(programAddress);
+      const head = valid.slice(0, 2 + 2 * 36); // 0x + selector(4) + mode(32) = 36 bytes
+      const tail = valid.slice(2 + 2 * 68); // skip the offset word
+      const badOffset = ethers.zeroPadValue(ethers.toBeHex(0x80n), 32).slice(2);
+      const mutated = head + badOffset + tail;
+
+      const userOp = {
+        ...buildUserOp(alice.address, programAddress, await cgPaymaster.getAddress(), orgAddress),
+        callData: mutated,
+      };
+
+      await expect(
+        cgPaymaster.connect(entryPointSigner).validatePaymasterUserOp(userOp, USER_OP_HASH, MAX_COST),
+      ).to.be.revertedWithCustomError(cgPaymaster, "InvalidCallData");
+    });
   });
 
   // ── postOp ──────────────────────────────────────────────────────────────────
@@ -374,13 +557,12 @@ describe("CGPaymaster", function () {
       const userOp = buildUserOp(alice.address, programAddress, await cgPaymaster.getAddress(), orgAddress);
       await cgPaymaster.connect(entryPointSigner).validatePaymasterUserOp(userOp, USER_OP_HASH, MAX_COST);
 
-      // Construct context as the contract encodes it: abi.encode(org, maxCost)
       const context = ethers.AbiCoder.defaultAbiCoder().encode(["address", "uint256"], [orgAddress, MAX_COST]);
 
       const actualCost = MAX_COST / 2n;
-      const expectedRemaining = DEPOSIT - actualCost; // MAX_COST reserved, half refunded
+      const expectedRemaining = DEPOSIT - actualCost;
 
-      await expect(cgPaymaster.connect(entryPointSigner).postOp(0, context, actualCost))
+      await expect(cgPaymaster.connect(entryPointSigner).postOp(POST_OP_MODE_SUCCEEDED, context, actualCost, 0n))
         .to.emit(cgPaymaster, "GasCharged")
         .withArgs(orgAddress, actualCost, expectedRemaining);
 
@@ -390,7 +572,7 @@ describe("CGPaymaster", function () {
     it("emits LowBalance when remaining balance falls below the threshold", async () => {
       const { cgPaymaster, orgAddress, programAddress, mockEntryPoint, alice } = await deployFixture();
 
-      // Deposit so that after the full charge, remaining = LOW_THRESHOLD - 1 (strictly below threshold)
+      // Deposit so that after the full charge, remaining = LOW_THRESHOLD - 1
       const tinyDeposit = LOW_THRESHOLD + MAX_COST - 1n;
       await cgPaymaster.depositFor(orgAddress, { value: tinyDeposit });
       const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
@@ -398,16 +580,77 @@ describe("CGPaymaster", function () {
       const userOp = buildUserOp(alice.address, programAddress, await cgPaymaster.getAddress(), orgAddress);
       await cgPaymaster.connect(entryPointSigner).validatePaymasterUserOp(userOp, USER_OP_HASH, MAX_COST);
 
-      // actualCost = MAX_COST → refund = 0 → remaining = LOW_THRESHOLD - 1 < threshold
       const context = ethers.AbiCoder.defaultAbiCoder().encode(["address", "uint256"], [orgAddress, MAX_COST]);
-      await expect(cgPaymaster.connect(entryPointSigner).postOp(0, context, MAX_COST))
+      await expect(cgPaymaster.connect(entryPointSigner).postOp(POST_OP_MODE_SUCCEEDED, context, MAX_COST, 0n))
         .to.emit(cgPaymaster, "LowBalance")
         .withArgs(orgAddress, LOW_THRESHOLD - 1n);
     });
 
+    it("refunds correctly under postOp mode opReverted (UserOp execution reverted)", async () => {
+      const { cgPaymaster, orgAddress, programAddress, mockEntryPoint, alice } = await deployFixture();
+
+      await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
+      const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
+
+      const userOp = buildUserOp(alice.address, programAddress, await cgPaymaster.getAddress(), orgAddress);
+      await cgPaymaster.connect(entryPointSigner).validatePaymasterUserOp(userOp, USER_OP_HASH, MAX_COST);
+
+      const context = ethers.AbiCoder.defaultAbiCoder().encode(["address", "uint256"], [orgAddress, MAX_COST]);
+      const actualCost = MAX_COST / 3n;
+
+      await expect(cgPaymaster.connect(entryPointSigner).postOp(POST_OP_MODE_REVERTED, context, actualCost, 0n))
+        .to.emit(cgPaymaster, "GasCharged")
+        .withArgs(orgAddress, actualCost, DEPOSIT - actualCost);
+
+      expect(await cgPaymaster.orgBalance(orgAddress)).to.equal(DEPOSIT - actualCost);
+    });
+
+    it("does NOT credit the refund when called with mode=postOpReverted (no double-credit)", async () => {
+      const { cgPaymaster, orgAddress, programAddress, mockEntryPoint, alice } = await deployFixture();
+
+      await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
+      const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
+
+      const userOp = buildUserOp(alice.address, programAddress, await cgPaymaster.getAddress(), orgAddress);
+      await cgPaymaster.connect(entryPointSigner).validatePaymasterUserOp(userOp, USER_OP_HASH, MAX_COST);
+
+      const reservedBalance = await cgPaymaster.orgBalance(orgAddress);
+      expect(reservedBalance).to.equal(DEPOSIT - MAX_COST);
+
+      // Simulate the EntryPoint retrying after the first postOp call reverted.
+      // The paymaster must forfeit the reserve rather than credit it back.
+      const context = ethers.AbiCoder.defaultAbiCoder().encode(["address", "uint256"], [orgAddress, MAX_COST]);
+      const tx = cgPaymaster.connect(entryPointSigner).postOp(POST_OP_MODE_POST_OP_REVERTED, context, MAX_COST, 0n);
+      await expect(tx).to.not.emit(cgPaymaster, "GasCharged");
+      await expect(tx).to.not.emit(cgPaymaster, "LowBalance");
+
+      // Balance unchanged — reserve forfeited, not refunded
+      expect(await cgPaymaster.orgBalance(orgAddress)).to.equal(reservedBalance);
+    });
+
+    it("caps refund when actualGasCost exceeds reserved (defensive)", async () => {
+      const { cgPaymaster, orgAddress, programAddress, mockEntryPoint, alice } = await deployFixture();
+
+      await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
+      const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
+
+      const userOp = buildUserOp(alice.address, programAddress, await cgPaymaster.getAddress(), orgAddress);
+      await cgPaymaster.connect(entryPointSigner).validatePaymasterUserOp(userOp, USER_OP_HASH, MAX_COST);
+
+      const reservedAfter = DEPOSIT - MAX_COST;
+      const context = ethers.AbiCoder.defaultAbiCoder().encode(["address", "uint256"], [orgAddress, MAX_COST]);
+
+      // actualGasCost > reserved is bounded; charge = reserved; remaining = reservedAfter + 0
+      await expect(cgPaymaster.connect(entryPointSigner).postOp(POST_OP_MODE_SUCCEEDED, context, MAX_COST + 1n, 0n))
+        .to.emit(cgPaymaster, "GasCharged")
+        .withArgs(orgAddress, MAX_COST, reservedAfter);
+
+      expect(await cgPaymaster.orgBalance(orgAddress)).to.equal(reservedAfter);
+    });
+
     it("reverts when called by anyone other than the EntryPoint", async () => {
       const { cgPaymaster, alice } = await deployFixture();
-      await expect(cgPaymaster.connect(alice).postOp(0, "0x", 0n)).to.be.revertedWithCustomError(
+      await expect(cgPaymaster.connect(alice).postOp(0, "0x", 0n, 0n)).to.be.revertedWithCustomError(
         cgPaymaster,
         "OnlyEntryPoint",
       );
@@ -467,12 +710,10 @@ describe("CGPaymaster", function () {
       await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
       await cgPaymaster.connect(deployer).transferManagement(orgAddress, orgOwner.address);
 
-      // Old manager (deployer) is blocked
       await expect(
         cgPaymaster.connect(deployer).withdraw(orgAddress, alice.address, DEPOSIT),
       ).to.be.revertedWithCustomError(cgPaymaster, "NotOrgManager");
 
-      // New manager (orgOwner) succeeds
       await expect(cgPaymaster.connect(orgOwner).withdraw(orgAddress, alice.address, DEPOSIT)).to.not.be.reverted;
     });
 
