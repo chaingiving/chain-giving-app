@@ -1,23 +1,21 @@
 import { wagmiConnectors } from "./wagmiConnectors";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import { createAppKit } from "@reown/appkit/react";
-import { Chain, fallback, http } from "viem";
-import { mainnet } from "viem/chains";
+import { fallback, http } from "viem";
 import scaffoldConfig, { DEFAULT_ALCHEMY_API_KEY, ScaffoldConfig } from "~~/scaffold.config";
 import { getAlchemyHttpUrl } from "~~/utils/scaffold-eth";
 
 const { targetNetworks } = scaffoldConfig;
 
-// We always want to have mainnet enabled (ENS resolution, ETH price, etc). But only once.
-export const enabledChains = targetNetworks.find((network: Chain) => network.id === 1)
-  ? targetNetworks
-  : ([...targetNetworks, mainnet] as const);
+// Only expose chain.giving's supported networks to wagmi/RainbowKit. ETH price
+// still works because fetchPriceFromUniswap calls Alchemy mainnet directly,
+// outside the wagmi config.
+export const enabledChains = targetNetworks;
 
 // Build per-chain transports with the same RPC fallback logic as before.
 const transports = Object.fromEntries(
   enabledChains.map(chain => {
-    const mainnetFallback = chain.id === mainnet.id ? [http("https://mainnet.rpc.buidlguidl.com")] : [];
-    let rpcFallbacks = [...mainnetFallback, http()];
+    let rpcFallbacks = [http()];
     const rpcOverrideUrl = (scaffoldConfig.rpcOverrides as ScaffoldConfig["rpcOverrides"])?.[chain.id];
     if (rpcOverrideUrl) {
       rpcFallbacks = [http(rpcOverrideUrl), ...rpcFallbacks];

@@ -4,6 +4,7 @@ import React, { useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { hardhat } from "viem/chains";
 import { useAccount } from "wagmi";
 import {
@@ -102,6 +103,7 @@ export const HeaderMenuLinks = () => {
  */
 export const Header = () => {
   const { targetNetwork } = useTargetNetwork();
+  const { isConnected } = useAccount();
   const isLocalNetwork = targetNetwork.id === hardhat.id;
 
   const burgerMenuRef = useRef<HTMLDetailsElement>(null);
@@ -143,6 +145,7 @@ export const Header = () => {
       </div>
       <div className="navbar-end grow mr-4 gap-2">
         {isLocalNetwork && <FaucetButton />}
+        {isConnected && <ConnectButton showBalance={false} chainStatus="icon" accountStatus="address" />}
         <div className="hidden lg:flex">
           <SwitchTheme />
         </div>

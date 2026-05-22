@@ -13,16 +13,28 @@ export type ScaffoldConfig = BaseConfig;
 
 export const DEFAULT_ALCHEMY_API_KEY = "cR4WnXePioePZ5fFrnSiR";
 
+const alchemyApiKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY || DEFAULT_ALCHEMY_API_KEY;
+
+// Replace Base Sepolia's default public RPC with Alchemy so Reown's embedded
+// wallet (which uses chain.rpcUrls.default) routes eth_sendTransaction through
+// our Alchemy key instead of rpc.walletconnect.com.
+const baseSepoliaWithAlchemy = {
+  ...chains.baseSepolia,
+  rpcUrls: {
+    default: { http: [`https://base-sepolia.g.alchemy.com/v2/${alchemyApiKey}`] },
+  },
+} satisfies chains.Chain;
+
 const scaffoldConfig = {
   // The networks on which your DApp is live
-  targetNetworks: [chains.baseSepolia, ...(process.env.NODE_ENV === "development" ? [chains.hardhat] : [])],
+  targetNetworks: [baseSepoliaWithAlchemy, ...(process.env.NODE_ENV === "development" ? [chains.hardhat] : [])],
   // The interval at which your front-end polls the RPC servers for new data (it has no effect if you only target the local network (default is 4000))
   pollingInterval: 3000,
   // This is ours Alchemy's default API key.
   // You can get your own at https://dashboard.alchemyapi.io
   // It's recommended to store it in an env variable:
   // .env.local for local testing, and in the Vercel/system env config for live apps.
-  alchemyApiKey: process.env.NEXT_PUBLIC_ALCHEMY_API_KEY || DEFAULT_ALCHEMY_API_KEY,
+  alchemyApiKey,
   // If you want to use a different RPC for a specific network, you can add it here.
   // The key is the chain ID, and the value is the HTTP RPC URL
   rpcOverrides: {
