@@ -5,8 +5,8 @@ import Link from "next/link";
 import { TopUpModal } from "./TopUpModal";
 import { Address as AddressDisplay } from "@scaffold-ui/components";
 import { Address, erc20Abi, formatUnits, isAddress, isAddressEqual, parseUnits } from "viem";
-import { useAccount, useBalance, useReadContract, useSendTransaction, useSwitchChain, useWriteContract } from "wagmi";
-import { ArrowDownOnSquareIcon, ArrowsRightLeftIcon } from "@heroicons/react/24/outline";
+import { useAccount, useBalance, useReadContract, useSendTransaction, useWriteContract } from "wagmi";
+import { ArrowDownOnSquareIcon } from "@heroicons/react/24/outline";
 import { AddressInputWithQr } from "~~/components/AddressInputWithQr";
 import { AuthProviderInfo, SignOutButton } from "~~/components/AuthSession";
 import { CurrencyLogo } from "~~/components/CurrencyLogo";
@@ -17,7 +17,7 @@ import { DonationCurrency, getDonationCurrencies } from "~~/contracts/donationCu
 import { useBlockExplorerLink, useScaffoldReadContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { useCGTokenWrite } from "~~/hooks/useCGTokenWrite";
 import { useSponsoredGasPreference } from "~~/hooks/useSponsoredGasPreference";
-import { getParsedError, getTargetNetworks, notification } from "~~/utils/scaffold-eth";
+import { getParsedError, notification } from "~~/utils/scaffold-eth";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -654,43 +654,6 @@ function SponsoredGasToggle() {
   );
 }
 
-// ── Network indicator + switcher ────────────────────────────────────────────
-
-function NetworkBadge() {
-  const { chain, isConnected } = useAccount();
-  const { targetNetwork } = useTargetNetwork();
-  const { switchChain, isPending } = useSwitchChain();
-  const networks = getTargetNetworks();
-  const current = chain ?? targetNetwork;
-  const others = networks.filter(n => n.id !== current.id);
-
-  return (
-    <div className="dropdown dropdown-end">
-      <div tabIndex={0} role="button" className="btn btn-sm btn-outline gap-2">
-        <ArrowsRightLeftIcon className="h-4 w-4" />
-        <span>{current.name}</span>
-      </div>
-      {others.length > 0 && (
-        <ul tabIndex={0} className="menu menu-sm dropdown-content bg-base-100 rounded-box z-[1] mt-2 w-56 p-2 shadow">
-          <li className="menu-title text-xs">Switch network</li>
-          {others.map(n => (
-            <li key={n.id}>
-              <button
-                type="button"
-                disabled={!isConnected || isPending}
-                onClick={() => switchChain?.({ chainId: n.id })}
-              >
-                {n.name}
-              </button>
-            </li>
-          ))}
-          {!isConnected && <li className="text-xs opacity-60 px-3 py-1">Connect a wallet to switch network.</li>}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 // ── Main wallet view ─────────────────────────────────────────────────────────
 
 export const WalletView = ({ address }: { address: Address }) => {
@@ -713,9 +676,6 @@ export const WalletView = ({ address }: { address: Address }) => {
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="card-title text-2xl">Wallet</h2>
             {isOwnWallet && <span className="badge badge-primary">Your Account</span>}
-            <div className="ml-auto">
-              <NetworkBadge />
-            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 mt-2 min-w-0">
