@@ -7,6 +7,10 @@ export type BaseConfig = {
   rpcOverrides?: Record<number, string>;
   walletConnectProjectId: string;
   burnerWalletMode: "localNetworksOnly" | "allNetworks" | "disabled";
+  // When false, the header wallet UI never resolves ENS names. ENS adds a
+  // mainnet round-trip per render and we don't surface ENS anywhere user-
+  // facing yet — flip to true once we want it back.
+  enableEnsResolution: boolean;
 };
 
 export type ScaffoldConfig = BaseConfig;
@@ -52,6 +56,7 @@ const scaffoldConfig = {
   // - "allNetworks": show on any configured target networks
   // - "disabled": completely disable
   burnerWalletMode: "localNetworksOnly",
+  enableEnsResolution: false,
 } as const satisfies ScaffoldConfig;
 
 export default scaffoldConfig;

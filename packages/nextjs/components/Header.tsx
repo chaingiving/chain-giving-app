@@ -4,7 +4,6 @@ import React, { useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { hardhat } from "viem/chains";
 import { useAccount } from "wagmi";
 import {
@@ -16,7 +15,7 @@ import {
   WalletIcon,
 } from "@heroicons/react/24/outline";
 import { SwitchTheme } from "~~/components/SwitchTheme";
-import { FaucetButton } from "~~/components/scaffold-eth";
+import { FaucetButton, RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
 import { useOutsideClick, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { useIsAdmin } from "~~/hooks/useIsAdmin";
 
@@ -145,7 +144,7 @@ export const Header = () => {
       </div>
       <div className="navbar-end grow mr-4 gap-2">
         {isLocalNetwork && <FaucetButton />}
-        {isConnected && <ConnectButton showBalance={false} chainStatus="icon" accountStatus="address" />}
+        {isConnected && <RainbowKitCustomConnectButton />}
         <div className="hidden lg:flex">
           <SwitchTheme />
         </div>

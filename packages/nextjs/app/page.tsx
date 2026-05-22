@@ -2,21 +2,18 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Address } from "@scaffold-ui/components";
 import type { NextPage } from "next";
-import { QRCodeSVG } from "qrcode.react";
 import { type Address as ViemAddress, isAddressEqual } from "viem";
 import { useAccount, useReadContract } from "wagmi";
-import { HeartIcon, UserGroupIcon, WalletIcon } from "@heroicons/react/24/outline";
-import { AuthProviderInfo, SignOutButton } from "~~/components/AuthSession";
+import { HeartIcon, UserGroupIcon } from "@heroicons/react/24/outline";
+import { AccountCard } from "~~/components/AccountCard";
 import { ChainGivingHeader } from "~~/components/ChainGivingHeader";
 import { EmbeddedWalletButton } from "~~/components/ConnectButton";
 import { ProgramCard } from "~~/components/ProgramCard";
 import { ProgramRoleBadges, useProgramRoles } from "~~/components/ProgramRoleBadges";
 import { RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
 import { cgOrganizationAbi } from "~~/contracts/cgOrganizationAbi";
-import { useScaffoldReadContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
-import { getBlockExplorerAddressLink } from "~~/utils/scaffold-eth";
+import { useScaffoldReadContract } from "~~/hooks/scaffold-eth";
 
 type VisibilityReporter = (address: ViemAddress, visible: boolean) => void;
 
@@ -140,7 +137,6 @@ const OrgPrograms = ({
 
 const Home: NextPage = () => {
   const { address: connectedAddress } = useAccount();
-  const { targetNetwork } = useTargetNetwork();
 
   const { data: orgAddresses } = useScaffoldReadContract({
     contractName: "CGRegistry",
@@ -217,50 +213,8 @@ const Home: NextPage = () => {
       ) : (
         <div className="flex flex-col md:flex-row gap-6 mt-8">
           <aside className="md:w-72 lg:w-80 md:shrink-0">
-            <div className="card bg-base-100 shadow-xl border border-base-300 rounded-3xl px-6 py-6 flex flex-col items-center gap-4 md:sticky md:top-4">
-              <p className="my-2 font-medium">Your Account</p>
-              <div className="cg-qr-pulse p-3 bg-base-100 rounded-2xl shadow-inner">
-                <QRCodeSVG
-                  value={connectedAddress}
-                  size={160}
-                  bgColor="#ffffff"
-                  fgColor="#258597"
-                  level="H"
-                  imageSettings={{
-                    src: "/logo.svg",
-                    width: 36,
-                    height: 36,
-                    excavate: true,
-                  }}
-                />
-                <style>{`
-                  .cg-qr-pulse svg image {
-                    transform-box: fill-box;
-                    transform-origin: center;
-                    animation: cg-qr-pulse 2.6s ease-in-out infinite;
-                  }
-                  @keyframes cg-qr-pulse {
-                    0%, 100% { transform: scale(1); }
-                    50% { transform: scale(1.06); }
-                  }
-                  @media (prefers-reduced-motion: reduce) {
-                    .cg-qr-pulse svg image { animation: none; }
-                  }
-                `}</style>
-              </div>
-              <Address
-                address={connectedAddress}
-                chain={targetNetwork}
-                blockExplorerAddressLink={getBlockExplorerAddressLink(targetNetwork, connectedAddress)}
-              />
-              <AuthProviderInfo className="justify-center" />
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                <Link href={`/wallet/${connectedAddress}`} className="btn btn-sm btn-outline gap-2">
-                  <WalletIcon className="h-4 w-4" />
-                  View Wallet
-                </Link>
-                <SignOutButton size="sm" />
-              </div>
+            <div className="card bg-base-100 shadow-xl border border-base-300 rounded-3xl px-6 py-6 md:sticky md:top-4">
+              <AccountCard address={connectedAddress} />
             </div>
           </aside>
 
