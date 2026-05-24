@@ -6,7 +6,7 @@ import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useAppKit } from "@reown/appkit/react";
 import { Address as AddressDisplay } from "@scaffold-ui/components";
 import { Address, erc20Abi, formatUnits, isAddress, isAddressEqual, parseUnits, zeroAddress } from "viem";
-import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useWalletClient, useWriteContract } from "wagmi";
 import {
   ArrowDownTrayIcon,
   ArrowUpTrayIcon,
@@ -28,9 +28,9 @@ import { cgOrganizationAbi } from "~~/contracts/cgOrganizationAbi";
 import { cgProgramAbi } from "~~/contracts/cgProgramAbi";
 import { DonationCurrency, findCurrency, getDonationCurrencies } from "~~/contracts/donationCurrencies";
 import { useBlockExplorerLink, useTargetNetwork } from "~~/hooks/scaffold-eth";
-import { useEffectiveAddress } from "~~/hooks/useEffectiveAddress";
 import { useProgramOrganization } from "~~/hooks/useProgramOrganization";
 import { useSponsoredWrite } from "~~/hooks/useSponsoredWrite";
+import { signErc2612Permit } from "~~/utils/permit";
 import { getParsedError, notification } from "~~/utils/scaffold-eth";
 
 const cgCrowdfundingAbi = [
@@ -440,12 +440,14 @@ function CrowdfundingSection({
   const { chainId } = useAccount();
   const { targetNetwork } = useTargetNetwork();
   const cfLink = useBlockExplorerLink(crowdfundingInfo?.addr);
-  const { write: sponsoredWrite } = useSponsoredWrite(orgAddress);
-  const { writeContractAsync: writeToken } = useWriteContract();
-  // Donations land under msg.sender. For the Kernel sponsorship path msg.sender
-  // is the user's counterfactual Kernel account, NOT their EOA — so contribution
-  // lookups, allowance, and balance all need to use the effective address.
-  const { address: donorAddress } = useEffectiveAddress();
+  const { writeContractAsync: writeContract } = useWriteContract();
+  const { data: walletClient } = useWalletClient();
+  const donatePublicClient = usePublicClient();
+  // Donations always run directly from the connected wallet. Sponsorship can't
+  // help here in practice: USDC's permit only verifies ECDSA signatures (no
+  // ERC-1271), so smart-account-held funds can't be permit-spent — and pulling
+  // tokens from the EOA via a smart-account msg.sender fails on allowance.
+  const donorAddress = connectedAddress;
 
   const cfAddr = crowdfundingInfo?.addr;
   const isValidCf = cfAddr && !isAddressEqual(cfAddr, zeroAddress);
@@ -491,12 +493,14 @@ function CrowdfundingSection({
     if (!cfAddr || isPending) return;
     setIsPending(true);
     try {
-      const success = await sponsoredWrite({
+      await writeContract({
         address: cfAddr,
         abi: cgCrowdfundingAbi,
         functionName,
       });
-      if (success) refetchUserContribution();
+      refetchUserContribution();
+    } catch (e) {
+      notification.error(getParsedError(e));
     } finally {
       setIsPending(false);
     }
@@ -550,35 +554,56 @@ function CrowdfundingSection({
       return;
     }
 
+    if (!walletClient || !donatePublicClient) {
+      notification.error("Wallet not ready");
+      return;
+    }
+
     setIsPending(true);
     try {
-      const currentAllowance = (allowance as bigint | undefined) ?? 0n;
-      if (currentAllowance < amountWei) {
-        try {
-          await writeToken({
+      // Single-tx permit path when the currency supports EIP-2612, otherwise a
+      // two-tx approve + donate. Both run directly from the connected wallet.
+      if (currency.permit) {
+        const deadline = BigInt(Math.floor(Date.now() / 1000) + 30 * 60);
+        const { v, r, s } = await signErc2612Permit({
+          publicClient: donatePublicClient,
+          walletClient,
+          token: currency.address,
+          owner: connectedAddress,
+          spender: programAddress,
+          value: amountWei,
+          deadline,
+        });
+        await writeContract({
+          address: programAddress,
+          abi: cgProgramAbi,
+          functionName: "donateWithPermit",
+          args: [amountWei, deadline, v, r, s],
+        });
+      } else {
+        const currentAllowance = (allowance as bigint | undefined) ?? 0n;
+        if (currentAllowance < amountWei) {
+          await writeContract({
             address: currency.address,
             abi: erc20Abi,
             functionName: "approve",
             args: [programAddress, amountWei],
           });
           await refetchAllowance();
-        } catch (e) {
-          notification.error(getParsedError(e));
-          return;
         }
+        await writeContract({
+          address: programAddress,
+          abi: cgProgramAbi,
+          functionName: "donate",
+          args: [amountWei],
+        });
       }
 
-      const success = await sponsoredWrite({
-        address: programAddress,
-        abi: cgProgramAbi,
-        functionName: "donate",
-        args: [amountWei],
-      });
-      if (success) {
-        setDonateAmount("");
-        refetchUserContribution();
-        refetchAllowance();
-      }
+      setDonateAmount("");
+      refetchUserContribution();
+      refetchAllowance();
+    } catch (e) {
+      notification.error(getParsedError(e));
     } finally {
       setIsPending(false);
     }

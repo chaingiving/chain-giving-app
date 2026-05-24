@@ -105,14 +105,12 @@ contract CGPaymaster is Ownable {
     // ── Sponsored inner-selector allowlist ───────────────────────────────────
     // Only non-owner, user-facing selectors are sponsorable. Owner-only admin ops
     // are excluded so an attacker cannot drain an org's gas budget via reverting calls.
+    //
+    // Donate / cancelContribution / refund are intentionally NOT sponsored:
+    // the frontend runs them as direct EOA calls because the ERC-20 token holder
+    // (msg.sender) must match the donor identity, which can't happen via a smart
+    // account when permit is ECDSA-only (USDC FiatToken).
 
-    // CGProgram + CGCrowdfunding (same signatures on both)
-    bytes4 private constant SEL_DONATE = bytes4(keccak256("donate(uint256)"));
-    bytes4 private constant SEL_DONATE_PERMIT =
-        bytes4(keccak256("donateWithPermit(uint256,uint256,uint8,bytes32,bytes32)"));
-    // CGCrowdfunding donor refunds
-    bytes4 private constant SEL_CANCEL_CONTRIBUTION = bytes4(keccak256("cancelContribution()"));
-    bytes4 private constant SEL_REFUND = bytes4(keccak256("refund()"));
     // CGToken user ops (ERC-1155 + ERC-1155Burnable)
     bytes4 private constant SEL_SAFE_TRANSFER_FROM =
         bytes4(keccak256("safeTransferFrom(address,address,uint256,uint256,bytes)"));
@@ -331,10 +329,6 @@ contract CGPaymaster is Ownable {
     ///      flows so owner-only admin reverts cannot drain an org's budget.
     function _isSponsoredSelector(bytes4 sel) internal pure returns (bool) {
         return
-            sel == SEL_DONATE ||
-            sel == SEL_DONATE_PERMIT ||
-            sel == SEL_CANCEL_CONTRIBUTION ||
-            sel == SEL_REFUND ||
             sel == SEL_SAFE_TRANSFER_FROM ||
             sel == SEL_SAFE_BATCH_TRANSFER_FROM ||
             sel == SEL_SET_APPROVAL_FOR_ALL ||
