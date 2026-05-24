@@ -1,7 +1,11 @@
 import * as chains from "viem/chains";
 
+// RainbowKit reads iconUrl/iconBackground off chain objects at runtime; viem's
+// Chain type doesn't declare them, so widen here to allow the literals below.
+export type TargetChain = chains.Chain & { iconUrl?: string; iconBackground?: string };
+
 export type BaseConfig = {
-  targetNetworks: readonly chains.Chain[];
+  targetNetworks: readonly TargetChain[];
   pollingInterval: number;
   alchemyApiKey: string;
   rpcOverrides?: Record<number, string>;
@@ -19,21 +23,23 @@ export const DEFAULT_ALCHEMY_API_KEY = "cR4WnXePioePZ5fFrnSiR";
 
 const alchemyApiKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY || DEFAULT_ALCHEMY_API_KEY;
 
-// Replace Base Sepolia's default public RPC with Alchemy so Reown's embedded
-// wallet (which uses chain.rpcUrls.default) routes eth_sendTransaction through
-// our Alchemy key instead of rpc.walletconnect.com.
-const baseSepoliaWithAlchemy = {
-  ...chains.baseSepolia,
-  rpcUrls: {
-    default: { http: [`https://base-sepolia.g.alchemy.com/v2/${alchemyApiKey}`] },
-  },
-} satisfies chains.Chain;
-
 const scaffoldConfig = {
   // The networks on which your DApp is live
   targetNetworks: [
-    baseSepoliaWithAlchemy,
-    chains.arcTestnet,
+    // Replace Base Sepolia's default public RPC with Alchemy so Reown's embedded
+    // wallet (which uses chain.rpcUrls.default) routes eth_sendTransaction through
+    // our Alchemy key instead of rpc.walletconnect.com.
+    {
+      ...chains.baseSepolia,
+      rpcUrls: {
+        default: { http: [`https://base-sepolia.g.alchemy.com/v2/${alchemyApiKey}`] },
+      },
+    },
+    {
+      ...chains.arcTestnet,
+      iconUrl: "/chains/arc.svg",
+      iconBackground: "#000000",
+    },
     ...(process.env.NODE_ENV === "development" ? [chains.hardhat] : []),
   ],
   // The interval at which your front-end polls the RPC servers for new data (it has no effect if you only target the local network (default is 4000))
