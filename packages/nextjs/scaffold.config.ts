@@ -31,7 +31,11 @@ const baseSepoliaWithAlchemy = {
 
 const scaffoldConfig = {
   // The networks on which your DApp is live
-  targetNetworks: [baseSepoliaWithAlchemy, ...(process.env.NODE_ENV === "development" ? [chains.hardhat] : [])],
+  targetNetworks: [
+    baseSepoliaWithAlchemy,
+    chains.arcTestnet,
+    ...(process.env.NODE_ENV === "development" ? [chains.hardhat] : []),
+  ],
   // The interval at which your front-end polls the RPC servers for new data (it has no effect if you only target the local network (default is 4000))
   pollingInterval: 3000,
   // This is ours Alchemy's default API key.

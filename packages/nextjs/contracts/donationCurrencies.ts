@@ -12,8 +12,11 @@ export type DonationCurrency = {
 
 // Real Circle deployments. Each address verified on Basescan as a Circle FiatTokenProxy.
 // Re-verify against the "Circle" tag on Basescan before changing.
+// On Arc, USDC is also the native gas token; the address below is the ERC-20 interface
+// (6 decimals), distinct from the 18-decimal native gas-token representation.
 const BASE_MAINNET = 8453;
 const BASE_SEPOLIA = 84532;
+const ARC_TESTNET = 5042002;
 const HARDHAT = 31337;
 
 const LOGO_USDC = "/currencies/usdc.svg";
@@ -51,6 +54,24 @@ const STATIC_CURRENCIES: Record<number, DonationCurrency[]> = {
       symbol: "EURC",
       name: "Euro Coin (testnet)",
       address: "0x808456652fdb597867f38412077A9182bf77359F",
+      decimals: 6,
+      permit: true,
+      logo: LOGO_EURC,
+    },
+  ],
+  [ARC_TESTNET]: [
+    {
+      symbol: "USDC",
+      name: "USD Coin (testnet)",
+      address: "0x3600000000000000000000000000000000000000",
+      decimals: 6,
+      permit: true,
+      logo: LOGO_USDC,
+    },
+    {
+      symbol: "EURC",
+      name: "Euro Coin (testnet)",
+      address: "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a",
       decimals: 6,
       permit: true,
       logo: LOGO_EURC,
