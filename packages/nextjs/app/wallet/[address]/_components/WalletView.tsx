@@ -478,7 +478,13 @@ function CurrencyBalanceRow({
   );
 }
 
-// ── Native asset (ETH) row ──────────────────────────────────────────────────
+// ── Native asset row (symbol varies per chain — USDC on Arc, ETH on most L1/L2s) ──
+
+const NATIVE_LOGO_BY_SYMBOL: Record<string, string> = {
+  ETH: "/currencies/eth.svg",
+  USDC: "/currencies/usdc.svg",
+  EURC: "/currencies/eurc.svg",
+};
 
 function NativeAssetRow({ walletAddress, isOwnWallet }: { walletAddress: Address; isOwnWallet: boolean }) {
   const [showTopUp, setShowTopUp] = useState(false);
@@ -499,6 +505,7 @@ function NativeAssetRow({ walletAddress, isOwnWallet }: { walletAddress: Address
   const symbol = data?.symbol ?? targetNetwork.nativeCurrency?.symbol ?? "ETH";
   const decimals = data?.decimals ?? targetNetwork.nativeCurrency?.decimals ?? 18;
   const value = data?.value ?? 0n;
+  const logoSrc = NATIVE_LOGO_BY_SYMBOL[symbol.toUpperCase()] ?? "/currencies/eth.svg";
 
   if (!isOwnWallet && value === 0n) return null;
 
@@ -541,7 +548,7 @@ function NativeAssetRow({ walletAddress, isOwnWallet }: { walletAddress: Address
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
         <span className="inline-flex items-center justify-center w-7 h-7 shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/currencies/eth.svg" alt={symbol} width={18} height={28} className="inline-block align-middle" />
+          <img src={logoSrc} alt={symbol} width={28} height={28} className="inline-block align-middle" />
         </span>
         <div className="flex flex-col min-w-0">
           <span className="font-semibold text-base">{symbol}</span>

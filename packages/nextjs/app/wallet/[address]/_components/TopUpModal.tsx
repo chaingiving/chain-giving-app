@@ -15,6 +15,12 @@ import { getBlockExplorerAddressLink, notification } from "~~/utils/scaffold-eth
 const FAUCET_CHAIN_IDS = new Set<number>([84532]);
 const FAUCET_TOKEN_BY_SYMBOL: Record<string, string> = { USDC: "usdc", EURC: "eurc", ETH: "eth" };
 
+// Circle's testnet faucet drips USDC/EURC on Arc Testnet (and other Circle-
+// supported testnets). External link; CDP doesn't proxy Arc.
+const ARC_TESTNET_ID = 5042002;
+const CIRCLE_FAUCET_URL = "https://faucet.circle.com/";
+const CIRCLE_FAUCET_TOKENS = new Set(["USDC", "EURC"]);
+
 // Mirrors the backend rate-limit window so the UI cooldown matches.
 const FAUCET_COOLDOWN_MS = 60 * 60 * 1000;
 const cooldownKey = (walletAddress: string, token: string) => `cg-faucet:${walletAddress.toLowerCase()}:${token}`;
@@ -51,6 +57,7 @@ export function TopUpModal({ walletAddress, currency, native, onClose }: Props) 
   const symbol = native ? native.symbol : (currency?.symbol ?? "");
   const faucetSupported = FAUCET_CHAIN_IDS.has(network.id) && FAUCET_TOKEN_BY_SYMBOL[symbol] !== undefined;
   const faucetToken = FAUCET_TOKEN_BY_SYMBOL[symbol];
+  const showCircleFaucetLink = network.id === ARC_TESTNET_ID && CIRCLE_FAUCET_TOKENS.has(symbol);
 
   const [cooldownUntil, setCooldownUntil] = useState(() =>
     faucetSupported && faucetToken ? readCooldown(walletAddress, faucetToken) : 0,
@@ -189,6 +196,14 @@ export function TopUpModal({ walletAddress, currency, native, onClose }: Props) 
                 `Get test ${symbol}`
               )}
             </button>
+          </div>
+        )}
+        {showCircleFaucetLink && (
+          <div className="w-full flex flex-col gap-2 border-t border-base-300 pt-3">
+            <p className="text-xs">You can request a small amount of test tokens from Circle&apos;s faucet.</p>
+            <a className="btn btn-primary btn-sm" href={CIRCLE_FAUCET_URL} target="_blank" rel="noopener noreferrer">
+              Open Circle faucet
+            </a>
           </div>
         )}
       </div>
