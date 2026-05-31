@@ -61,6 +61,23 @@ const PERMIT_TYPES = {
   ],
 } as const;
 
+/// Canonical Uniswap Permit2 address — deterministically deployed at the same
+/// address on every supported chain.
+export const PERMIT2_ADDRESS: Address = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+
+const PERMIT2_TYPES = {
+  PermitTransferFrom: [
+    { name: "permitted", type: "TokenPermissions" },
+    { name: "spender", type: "address" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
+  TokenPermissions: [
+    { name: "token", type: "address" },
+    { name: "amount", type: "uint256" },
+  ],
+} as const;
+
 const DOMAIN_TYPEHASH = keccak256(
   stringToHex("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
 );
@@ -152,4 +169,39 @@ export async function signErc2612Permit(params: {
   const parsed = parseSignature(signature);
   const v = parsed.v !== undefined ? Number(parsed.v) : 27 + parsed.yParity;
   return { v, r: parsed.r, s: parsed.s };
+}
+
+/**
+ * Sign a Uniswap Permit2 SignatureTransfer (PermitTransferFrom).
+ *
+ * Wallets specifically recognize the Permit2 contract address and render a
+ * friendlier UI than for raw ERC-2612 permits, because Permit2 is in their
+ * allowlists. Requires a one-time `approve(PERMIT2_ADDRESS, …)` on the token.
+ *
+ * Returns the raw 65-byte signature that `donateWithPermit2(amount, nonce,
+ * deadline, signature)` accepts as its `bytes calldata signature` parameter.
+ *
+ * `nonce` only needs to be unique per owner (not sequential — Permit2 uses a
+ * bitmap); caller typically passes `BigInt(Date.now())` to guarantee uniqueness.
+ */
+export async function signPermit2(params: {
+  publicClient: PublicClient;
+  walletClient: WalletClient;
+  owner: Address;
+  spender: Address;
+  token: Address;
+  amount: bigint;
+  nonce: bigint;
+  deadline: bigint;
+}): Promise<Hex> {
+  const { publicClient, walletClient, owner, spender, token, amount, nonce, deadline } = params;
+  const chainId = publicClient.chain?.id ?? (await publicClient.getChainId());
+
+  return walletClient.signTypedData({
+    account: owner,
+    domain: { name: "Permit2", chainId, verifyingContract: PERMIT2_ADDRESS },
+    types: PERMIT2_TYPES,
+    primaryType: "PermitTransferFrom",
+    message: { permitted: { token, amount }, spender, nonce, deadline },
+  });
 }

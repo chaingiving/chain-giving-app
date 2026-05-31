@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useAppKit } from "@reown/appkit/react";
 import { Address as AddressDisplay } from "@scaffold-ui/components";
-import { Address, erc20Abi, formatUnits, isAddress, isAddressEqual, parseUnits, zeroAddress } from "viem";
+import { Address, erc20Abi, formatUnits, isAddress, isAddressEqual, maxUint256, parseUnits, zeroAddress } from "viem";
 import { useAccount, usePublicClient, useReadContract, useWalletClient, useWriteContract } from "wagmi";
 import {
   ArrowDownTrayIcon,
@@ -30,7 +30,7 @@ import { DonationCurrency, findCurrency, getDonationCurrencies } from "~~/contra
 import { useBlockExplorerLink, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { useProgramOrganization } from "~~/hooks/useProgramOrganization";
 import { useSponsoredWrite } from "~~/hooks/useSponsoredWrite";
-import { signErc2612Permit } from "~~/utils/permit";
+import { PERMIT2_ADDRESS, signErc2612Permit, signPermit2 } from "~~/utils/permit";
 import { getParsedError, notification } from "~~/utils/scaffold-eth";
 
 const cgCrowdfundingAbi = [
@@ -561,25 +561,67 @@ function CrowdfundingSection({
 
     setIsPending(true);
     try {
-      // Single-tx permit path when the currency supports EIP-2612, otherwise a
-      // two-tx approve + donate. Both run directly from the connected wallet.
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 30 * 60);
+
       if (currency.permit) {
-        const deadline = BigInt(Math.floor(Date.now() / 1000) + 30 * 60);
-        const { v, r, s } = await signErc2612Permit({
-          publicClient: donatePublicClient,
-          walletClient,
-          token: currency.address,
-          owner: connectedAddress,
-          spender: programAddress,
-          value: amountWei,
-          deadline,
-        });
-        await writeContract({
-          address: programAddress,
-          abi: cgProgramAbi,
-          functionName: "donateWithPermit",
-          args: [amountWei, deadline, v, r, s],
-        });
+        // Prefer Uniswap Permit2 when the chain has it deployed — wallets
+        // render its signatures with a friendlier UI than raw ERC-2612 permits.
+        // Localhost (and any chain missing Permit2) falls back to ERC-2612.
+        const permit2Code = await donatePublicClient.getCode({ address: PERMIT2_ADDRESS });
+        const hasPermit2 = !!permit2Code && permit2Code !== "0x";
+
+        if (hasPermit2) {
+          // One-time approval of the token to Permit2. Max-approve so subsequent
+          // donations need only a signature.
+          const permit2Allowance = (await donatePublicClient.readContract({
+            address: currency.address,
+            abi: erc20Abi,
+            functionName: "allowance",
+            args: [connectedAddress, PERMIT2_ADDRESS],
+          })) as bigint;
+          if (permit2Allowance < amountWei) {
+            await writeContract({
+              address: currency.address,
+              abi: erc20Abi,
+              functionName: "approve",
+              args: [PERMIT2_ADDRESS, maxUint256],
+            });
+          }
+
+          const nonce = BigInt(Date.now());
+          const signature = await signPermit2({
+            publicClient: donatePublicClient,
+            walletClient,
+            owner: connectedAddress,
+            spender: programAddress,
+            token: currency.address,
+            amount: amountWei,
+            nonce,
+            deadline,
+          });
+          await writeContract({
+            address: programAddress,
+            abi: cgProgramAbi,
+            functionName: "donateWithPermit2",
+            args: [amountWei, nonce, deadline, signature],
+          });
+        } else {
+          const { v, r, s } = await signErc2612Permit({
+            publicClient: donatePublicClient,
+            walletClient,
+            token: currency.address,
+            owner: connectedAddress,
+            spender: programAddress,
+            value: amountWei,
+            deadline,
+          });
+          await writeContract({
+            address: programAddress,
+            abi: cgProgramAbi,
+            functionName: "donateWithPermit",
+            args: [amountWei, deadline, v, r, s],
+          });
+        }
       } else {
         const currentAllowance = (allowance as bigint | undefined) ?? 0n;
         if (currentAllowance < amountWei) {

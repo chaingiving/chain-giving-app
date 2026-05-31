@@ -118,6 +118,18 @@ export const cgProgramAbi = [
     type: "function",
   },
   {
+    inputs: [
+      { name: "amount", type: "uint256" },
+      { name: "nonce", type: "uint256" },
+      { name: "deadline", type: "uint256" },
+      { name: "signature", type: "bytes" },
+    ],
+    name: "donateWithPermit2",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
     inputs: [{ name: "tokenId_", type: "uint256" }],
     name: "createDistribution",
     outputs: [{ name: "", type: "address" }],

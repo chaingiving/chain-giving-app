@@ -3693,7 +3693,7 @@ const deployedContracts = {
       deployedOnBlock: 43835625,
     },
     CGPaymaster: {
-      address: "0x0e4914C6c2c7299dd1129800AcA5eB9df2ae896B",
+      address: "0x606429d6694CcC7fc66f687d966e9D01e92ee28F",
       abi: [
         {
           inputs: [
@@ -4253,10 +4253,10 @@ const deployedContracts = {
         renounceOwnership: "@openzeppelin/contracts/access/Ownable.sol",
         transferOwnership: "@openzeppelin/contracts/access/Ownable.sol",
       },
-      deployedOnBlock: 43835659,
+      deployedOnBlock: 44890726,
     },
     CGProgramFactory: {
-      address: "0xdf32E8a18E850972D0995EEE1170b8Ea59Ba59fE",
+      address: "0x29B14a1af670Eb2D8c919c36B4F44ab1C3a45717",
       abi: [
         {
           inputs: [
@@ -4477,10 +4477,10 @@ const deployedContracts = {
         renounceOwnership: "@openzeppelin/contracts/access/Ownable.sol",
         transferOwnership: "@openzeppelin/contracts/access/Ownable.sol",
       },
-      deployedOnBlock: 43835633,
+      deployedOnBlock: 44890701,
     },
     CGRegistry: {
-      address: "0xE9440951e75CfF532Facac87A9914479C647e84C",
+      address: "0xcE04bE2f1460882055Bf3E7Dcad6ccaf9A4eE56b",
       abi: [
         {
           inputs: [
@@ -4782,7 +4782,7 @@ const deployedContracts = {
         renounceOwnership: "@openzeppelin/contracts/access/Ownable.sol",
         transferOwnership: "@openzeppelin/contracts/access/Ownable.sol",
       },
-      deployedOnBlock: 43835642,
+      deployedOnBlock: 44890709,
     },
   },
 } as const;
