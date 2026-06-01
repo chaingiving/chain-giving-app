@@ -17,6 +17,11 @@ const hasOnlyLocalTargetNetworks = targetNetworks.every(network => network.id ==
 const showBurnerWallet =
   burnerWalletMode !== "disabled" && (burnerWalletMode === "allNetworks" || hasOnlyLocalTargetNetworks);
 
+// burner-connector ships its own pinned RainbowKit + @wagmi/core under
+// node_modules/burner-connector/node_modules/ — those nested copies emit a
+// structurally identical Wallet/Connector type that TS treats as a distinct
+// nominal type, so rainbowkitBurnerWallet doesn't unify with CreateWalletFn.
+// Runtime is fine; cast at the boundary instead of forcing a yarn resolution.
 const wallets = [
   metaMaskWallet,
   walletConnectWallet,
@@ -25,7 +30,7 @@ const wallets = [
   rainbowWallet,
   safeWallet,
   ...(showBurnerWallet ? [rainbowkitBurnerWallet] : []),
-];
+] as Parameters<typeof connectorsForWallets>[0][number]["wallets"];
 
 /**
  * wagmi connectors for the wagmi context
