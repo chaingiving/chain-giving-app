@@ -67,6 +67,26 @@ export const cgTokenAbi = [
     type: "function",
   },
   {
+    inputs: [
+      { internalType: "address", name: "owner", type: "address" },
+      { internalType: "address", name: "operator", type: "address" },
+      { internalType: "bool", name: "approved", type: "bool" },
+      { internalType: "uint256", name: "deadline", type: "uint256" },
+      { internalType: "bytes", name: "signature", type: "bytes" },
+    ],
+    name: "setApprovalForAllWithSignature",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "address", name: "owner", type: "address" }],
+    name: "nonces",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
     inputs: [{ internalType: "uint256", name: "id", type: "uint256" }],
     name: "uri",
     outputs: [{ internalType: "string", name: "", type: "string" }],

@@ -9,9 +9,9 @@ import { deriveKernelAddress } from "~~/services/web3/smartAccount";
  *
  * - When the wallet is itself a smart account (EIP-5792 capable), the connected
  *   address IS the on-chain identity — return it unchanged.
- * - When the wallet is EOA-backed, donations go through a counterfactual Kernel
- *   account. Return the derived Kernel address so that "/wallet/[me]", donor
- *   recognition, and contribution lookups all see the same identity.
+ * - When the wallet is EOA-backed, sponsored writes go through a counterfactual
+ *   Kernel account. Return the derived Kernel address so that "/wallet/[me]",
+ *   donor recognition, and contribution lookups all see the same identity.
  *
  * `mode` reflects which path was used to compute the address so callers can
  * adjust copy ("Your smart account" vs "Your wallet").

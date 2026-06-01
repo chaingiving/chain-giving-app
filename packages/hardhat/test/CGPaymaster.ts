@@ -13,8 +13,13 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Default inner call used by encodeExecute — uses an allowlisted selector so paymaster
- *  validation tests can focus on org/target/balance logic without crafting payloads. */
-const DEFAULT_INNER_DATA = new ethers.Interface(["function donate(uint256)"]).encodeFunctionData("donate", [1n]);
+ *  validation tests can focus on org/target/balance logic without crafting payloads.
+ *  setApprovalForAll(address,bool) is on the sponsored allowlist (CGToken user op);
+ *  donate/cancel/refund were pruned from the allowlist in the EOA-direct migration. */
+const DEFAULT_INNER_DATA = new ethers.Interface(["function setApprovalForAll(address,bool)"]).encodeFunctionData(
+  "setApprovalForAll",
+  [ethers.ZeroAddress, true],
+);
 
 /** ABI-encodes an execute(address,uint256,bytes) call (SimpleAccount / Coinbase Smart Wallet).
  *  `data` defaults to a `donate(1)` payload so it passes CGPaymaster's selector allowlist. */
@@ -37,6 +42,18 @@ function encodeExecuteERC7579(
   const iface = new ethers.Interface(["function execute(bytes32,bytes)"]);
   const executionData = ethers.concat([target, ethers.zeroPadValue(ethers.toBeHex(value), 32), data]);
   return iface.encodeFunctionData("execute", [mode, executionData]);
+}
+
+/** ABI-encodes an ERC-7579 BATCH execute (callType 0x01). executionData is
+ *  abi.encode(Execution[]) where Execution = (address target, uint256 value, bytes callData). */
+function encodeExecuteERC7579Batch(executions: Array<{ target: string; value?: bigint; data: string }>): string {
+  const iface = new ethers.Interface(["function execute(bytes32,bytes)"]);
+  const batchMode = "0x01" + "00".repeat(31);
+  const executionData = ethers.AbiCoder.defaultAbiCoder().encode(
+    ["tuple(address,uint256,bytes)[]"],
+    [executions.map(e => [e.target, e.value ?? 0n, e.data])],
+  );
+  return iface.encodeFunctionData("execute", [batchMode, executionData]);
 }
 
 /** Builds the v0.7 paymasterAndData field:
@@ -450,17 +467,90 @@ describe("CGPaymaster", function () {
       expect(validationData).to.equal(0n);
     });
 
-    it("rejects Kernel batch execution (callType 0x01)", async () => {
+    it("accepts Kernel batch execution (callType 0x01) when every inner call is sponsorable", async () => {
+      const { cgPaymaster, orgAddress, programAddress, tokenAddress, mockEntryPoint, alice } = await deployFixture();
+
+      await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
+      const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
+
+      // Two sponsorable calls bundled in one UserOp: a donate on the program,
+      // and a safeTransferFrom on the token. Both selectors are allowlisted and
+      // both targets belong to the org.
+      const tokenIface = new ethers.Interface(["function safeTransferFrom(address,address,uint256,uint256,bytes)"]);
+      const transferData = tokenIface.encodeFunctionData("safeTransferFrom", [
+        alice.address,
+        alice.address,
+        0n,
+        1n,
+        "0x",
+      ]);
+
+      const userOp = {
+        ...buildUserOp(alice.address, programAddress, await cgPaymaster.getAddress(), orgAddress),
+        callData: encodeExecuteERC7579Batch([
+          { target: programAddress, data: DEFAULT_INNER_DATA },
+          { target: tokenAddress, data: transferData },
+        ]),
+      };
+
+      const [, validationData] = await cgPaymaster
+        .connect(entryPointSigner)
+        .validatePaymasterUserOp.staticCall(userOp, USER_OP_HASH, MAX_COST);
+      expect(validationData).to.equal(0n);
+    });
+
+    it("rejects Kernel batch execution when any inner selector is not on the allowlist", async () => {
       const { cgPaymaster, orgAddress, programAddress, mockEntryPoint, alice } = await deployFixture();
 
       await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
       const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
 
-      // Mode with callType=0x01 in the high byte
-      const batchMode = "0x01" + "00".repeat(31);
+      const adminIface = new ethers.Interface(["function setBeneficiaries(uint256,address[],uint256[])"]);
+      const adminData = adminIface.encodeFunctionData("setBeneficiaries", [0n, [alice.address], [1n]]);
+
       const userOp = {
         ...buildUserOp(alice.address, programAddress, await cgPaymaster.getAddress(), orgAddress),
-        callData: encodeExecuteERC7579(programAddress, 0n, DEFAULT_INNER_DATA, batchMode),
+        callData: encodeExecuteERC7579Batch([
+          { target: programAddress, data: DEFAULT_INNER_DATA },
+          { target: programAddress, data: adminData }, // setBeneficiaries is owner-only — never sponsored
+        ]),
+      };
+
+      await expect(
+        cgPaymaster.connect(entryPointSigner).validatePaymasterUserOp(userOp, USER_OP_HASH, MAX_COST),
+      ).to.be.revertedWithCustomError(cgPaymaster, "InvalidCallData");
+    });
+
+    it("rejects Kernel batch execution when any target is outside the sponsoring org", async () => {
+      const { cgPaymaster, orgAddress, programAddress, mockEntryPoint, alice } = await deployFixture();
+
+      await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
+      const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
+
+      const userOp = {
+        ...buildUserOp(alice.address, programAddress, await cgPaymaster.getAddress(), orgAddress),
+        callData: encodeExecuteERC7579Batch([
+          { target: programAddress, data: DEFAULT_INNER_DATA },
+          { target: alice.address, data: DEFAULT_INNER_DATA }, // alice isn't an org contract
+        ]),
+      };
+
+      // Matches the single-execution behavior: _isValidCall returns false, the
+      // outer validatePaymasterUserOp reverts with InvalidCallTarget.
+      await expect(
+        cgPaymaster.connect(entryPointSigner).validatePaymasterUserOp(userOp, USER_OP_HASH, MAX_COST),
+      ).to.be.revertedWithCustomError(cgPaymaster, "InvalidCallTarget");
+    });
+
+    it("rejects empty Kernel batch", async () => {
+      const { cgPaymaster, orgAddress, programAddress, mockEntryPoint, alice } = await deployFixture();
+
+      await cgPaymaster.depositFor(orgAddress, { value: DEPOSIT });
+      const entryPointSigner = await impersonate(await mockEntryPoint.getAddress());
+
+      const userOp = {
+        ...buildUserOp(alice.address, programAddress, await cgPaymaster.getAddress(), orgAddress),
+        callData: encodeExecuteERC7579Batch([]),
       };
 
       await expect(

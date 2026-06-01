@@ -100,7 +100,17 @@ contract CGPaymaster is Ownable {
     uint256 private constant ERC7579_INNER_SELECTOR_AT = 152;
     uint256 private constant ERC7579_MIN_EXEC_DATA_LEN = 56;
     uint256 private constant ERC7579_MIN_LENGTH = 156;
+    uint256 private constant ERC7579_MIN_BATCH_HEADER = 100;
     bytes1 private constant ERC7579_CALLTYPE_SINGLE = 0x00;
+    bytes1 private constant ERC7579_CALLTYPE_BATCH = 0x01;
+
+    /// @dev ERC-7579 Execution tuple used by the batch executionData encoding.
+    ///      Matches Kernel v3's `execute(bytes32, bytes)` with callType=0x01.
+    struct Execution {
+        address target;
+        uint256 value;
+        bytes callData;
+    }
 
     // ── Sponsored inner-selector allowlist ───────────────────────────────────
     // Only non-owner, user-facing selectors are sponsorable. Owner-only admin ops
@@ -117,6 +127,11 @@ contract CGPaymaster is Ownable {
     bytes4 private constant SEL_SAFE_BATCH_TRANSFER_FROM =
         bytes4(keccak256("safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)"));
     bytes4 private constant SEL_SET_APPROVAL_FOR_ALL = bytes4(keccak256("setApprovalForAll(address,bool)"));
+    /// @dev Signed-permit variant of setApprovalForAll on CGToken. Lets a sponsored
+    ///      smart account grant itself operator status using an off-chain ECDSA/1271
+    ///      signature from the token owner — no EOA gas required to bootstrap.
+    bytes4 private constant SEL_SET_APPROVAL_FOR_ALL_WITH_SIG =
+        bytes4(keccak256("setApprovalForAllWithSignature(address,address,bool,uint256,bytes)"));
     bytes4 private constant SEL_BURN = bytes4(keccak256("burn(address,uint256,uint256)"));
     bytes4 private constant SEL_BURN_BATCH = bytes4(keccak256("burnBatch(address,uint256[],uint256[])"));
 
@@ -304,19 +319,36 @@ contract CGPaymaster is Ownable {
             target = address(uint160(uint256(bytes32(callData[4:36]))));
             innerSelector = bytes4(callData[SIMPLE_INNER_SELECTOR_AT:SIMPLE_INNER_SELECTOR_AT + 4]);
         } else if (outerSel == EXECUTE_ERC7579) {
-            if (callData.length < ERC7579_MIN_LENGTH) revert InvalidCallData();
-
-            // Reject batch (0x01) and delegatecall (0xff) in v1
-            if (callData[4] != ERC7579_CALLTYPE_SINGLE) revert InvalidCallData();
+            if (callData.length < ERC7579_MIN_BATCH_HEADER) revert InvalidCallData();
+            bytes1 callType = callData[4];
 
             uint256 dataOffset = uint256(bytes32(callData[36:68]));
             if (dataOffset != ERC7579_DATA_OFFSET) revert InvalidCallData();
             uint256 dataLength = uint256(bytes32(callData[68:100]));
-            if (dataLength < ERC7579_MIN_EXEC_DATA_LEN) revert InvalidCallData();
             if (callData.length < 100 + dataLength) revert InvalidCallData();
 
-            target = address(bytes20(callData[ERC7579_TARGET_AT:ERC7579_TARGET_AT + 20]));
-            innerSelector = bytes4(callData[ERC7579_INNER_SELECTOR_AT:ERC7579_INNER_SELECTOR_AT + 4]);
+            if (callType == ERC7579_CALLTYPE_SINGLE) {
+                if (callData.length < ERC7579_MIN_LENGTH) revert InvalidCallData();
+                if (dataLength < ERC7579_MIN_EXEC_DATA_LEN) revert InvalidCallData();
+                target = address(bytes20(callData[ERC7579_TARGET_AT:ERC7579_TARGET_AT + 20]));
+                innerSelector = bytes4(callData[ERC7579_INNER_SELECTOR_AT:ERC7579_INNER_SELECTOR_AT + 4]);
+            } else if (callType == ERC7579_CALLTYPE_BATCH) {
+                // Batch: executionData is abi.encode(Execution[]). Validate each
+                // entry independently against the same selector + ownership rules.
+                Execution[] memory executions = abi.decode(callData[100:100 + dataLength], (Execution[]));
+                if (executions.length == 0) revert InvalidCallData();
+                for (uint256 i = 0; i < executions.length; i++) {
+                    Execution memory ex = executions[i];
+                    if (ex.callData.length < 4) revert InvalidCallData();
+                    bytes4 innerSel = bytes4(ex.callData);
+                    if (!_isSponsoredSelector(innerSel)) revert InvalidCallData();
+                    if (!_isOrgContract(org, ex.target)) return false;
+                }
+                return true;
+            } else {
+                // delegatecall (0xff) and any other unknown callType stays rejected.
+                revert InvalidCallData();
+            }
         } else {
             revert InvalidCallData();
         }
@@ -332,6 +364,7 @@ contract CGPaymaster is Ownable {
             sel == SEL_SAFE_TRANSFER_FROM ||
             sel == SEL_SAFE_BATCH_TRANSFER_FROM ||
             sel == SEL_SET_APPROVAL_FOR_ALL ||
+            sel == SEL_SET_APPROVAL_FOR_ALL_WITH_SIG ||
             sel == SEL_BURN ||
             sel == SEL_BURN_BATCH;
     }

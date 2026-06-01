@@ -55,6 +55,12 @@ export async function getKernelClient({ walletClient, publicClient, chain, orgAd
     owners: [owner],
     version: KERNEL_VERSION,
     index: 0n,
+    // Skip Kernel's MetaFactory wrapper and call KernelFactory directly. On
+    // Arc Testnet the MetaFactory at 0xd703… is deployed but the inner
+    // KernelFactory isn't whitelisted there (the deployment was missing the
+    // post-deploy approveFactory step), so going through MetaFactory reverts
+    // with NotApproved (0xc88357cc) → AA13. KernelFactory is permissionless.
+    useMetaFactory: false,
   });
 
   const bundlerUrl = `/api/bundler/${chain.id}`;
@@ -95,22 +101,10 @@ export async function getKernelClient({ walletClient, publicClient, chain, orgAd
   });
 }
 
-/** Serializable UserOperation fields are encoded as hex; convert any bigint we see. */
-function serializeUserOp(userOp: Record<string, unknown>) {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(userOp)) {
-    if (typeof v === "bigint") {
-      out[k] = numberToHex(v);
-    } else if (v === undefined) {
-      // Drop undefined fields — JSON.stringify keeps `undefined` as `null` which
-      // some paymaster impls reject.
-      continue;
-    } else {
-      out[k] = v;
-    }
-  }
-  return out;
-}
+/** JSON.stringify replacer that hex-encodes BigInts at any depth.
+ *  Needed because the UserOperation passed to getPaymasterStubData can carry
+ *  nested BigInts that a shallow walk misses. ERC-7677 expects hex-string numerics. */
+const bigIntReplacer = (_key: string, value: unknown) => (typeof value === "bigint" ? numberToHex(value) : value);
 
 async function callPaymaster(
   method: "pm_getPaymasterData" | "pm_getPaymasterStubData",
@@ -121,12 +115,15 @@ async function callPaymaster(
   const res = await fetch("/api/paymaster", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method,
-      params: [serializeUserOp(userOp), entryPoint07Address, toHex(chainId), { orgAddress }],
-    }),
+    body: JSON.stringify(
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method,
+        params: [userOp, entryPoint07Address, toHex(chainId), { orgAddress }],
+      },
+      bigIntReplacer,
+    ),
   });
   const json = await res.json();
   if (json.error) {
@@ -154,6 +151,7 @@ export async function deriveKernelAddress(publicClient: PublicClient, walletClie
     owners: [owner],
     version: KERNEL_VERSION,
     index: 0n,
+    useMetaFactory: false,
   });
   return account.address;
 }

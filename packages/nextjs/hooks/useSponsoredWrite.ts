@@ -82,27 +82,30 @@ export function useSponsoredWrite(orgAddress: Address | undefined) {
 
   const { sendCallsAsync } = useSendCalls();
   const { data: walletClient } = useWalletClient();
-  const { sendCall: sendKernelCall, smartAddress } = useSponsoredUserOp(orgAddress);
+  const { sendCalls: sendKernelCalls, smartAddress } = useSponsoredUserOp(orgAddress);
   const writeTx = useTransactor();
 
-  const write = async (call: ContractCall): Promise<boolean> => {
+  // Core dispatcher — accepts one or more calls and routes them as a single
+  // sponsored UserOp (EIP-5792 wallet_sendCalls or a multi-call Kernel UserOp)
+  // or a sequence of direct writes (sponsored: false admin path).
+  const writeMany = async (calls: ContractCall[]): Promise<boolean> => {
+    if (calls.length === 0) return false;
+    // sponsored is a per-call flag in our API, but a single UserOp can only run
+    // in one mode. The first call wins for routing; mixing isn't supported.
+    const wantSponsored = calls[0].sponsored !== false;
     try {
-      const wantSponsored = call.sponsored !== false;
-
       if (wantSponsored && sponsorshipMode === "eip5792") {
         const paymasterServiceUrl = `${window.location.origin}/api/paymaster`;
         await sendCallsAsync({
-          calls: [
-            {
-              to: call.address,
-              data: encodeFunctionData({
-                abi: call.abi as Abi,
-                functionName: call.functionName,
-                args: call.args ?? [],
-              }),
-              value: call.value,
-            },
-          ],
+          calls: calls.map(c => ({
+            to: c.address,
+            data: encodeFunctionData({
+              abi: c.abi as Abi,
+              functionName: c.functionName,
+              args: c.args ?? [],
+            }),
+            value: c.value,
+          })),
           capabilities: {
             paymasterService: {
               url: paymasterServiceUrl,
@@ -116,19 +119,20 @@ export function useSponsoredWrite(orgAddress: Address | undefined) {
       }
 
       if (wantSponsored && sponsorshipMode === "kernel") {
-        await sendKernelCall({
-          address: call.address,
-          abi: call.abi,
-          functionName: call.functionName,
-          args: call.args,
-          value: call.value,
-        });
+        await sendKernelCalls(
+          calls.map(c => ({
+            address: c.address,
+            abi: c.abi,
+            functionName: c.functionName,
+            args: c.args,
+            value: c.value,
+          })),
+        );
         notification.success("Transaction sponsored by organization gas budget");
         return true;
       }
 
       if (wantSponsored && sponsorshipMode === "none") {
-        // No fallback. Surface why so the org admin (or the donor) can act.
         const reason = !orgAddress
           ? "Sponsoring organization unknown"
           : !hasBudget
@@ -137,34 +141,43 @@ export function useSponsoredWrite(orgAddress: Address | undefined) {
         throw new Error(reason);
       }
 
-      // Admin op (sponsored: false) — send directly from the connected wallet.
+      // Admin op (sponsored: false) — send each call directly. Sequential, not
+      // batched, since EOAs can't atomically execute multiple txs.
       if (!walletClient) throw new Error("Wallet not connected");
       const chain = chainId ? wagmiConfig.chains.find((c: Chain) => c.id === chainId) : undefined;
       if (!chain) throw new Error(`Unsupported chain: ${String(rawChainId)}`);
-
       const safeClient = buildSafeWalletClient(walletClient, chain);
 
-      await writeTx(() =>
-        viemWriteContract(safeClient, {
-          address: call.address,
-          abi: call.abi as Abi,
-          functionName: call.functionName,
-          args: (call.args ?? []) as any,
-          value: call.value,
-          chain,
-          account: walletClient.account,
-        } as any),
-      );
+      for (const call of calls) {
+        await writeTx(() =>
+          viemWriteContract(safeClient, {
+            address: call.address,
+            abi: call.abi as Abi,
+            functionName: call.functionName,
+            args: (call.args ?? []) as any,
+            value: call.value,
+            chain,
+            account: walletClient.account,
+          } as any),
+        );
+      }
       return true;
     } catch (e) {
+      console.error("[useSponsoredWrite] failed:", e);
       const errorMessage = getParsedError(e);
       notification.error(errorMessage);
       return false;
     }
   };
 
+  const write = (call: ContractCall) => writeMany([call]);
+  const writeBatch = (calls: ContractCall[]) => writeMany(calls);
+
   return {
     write,
+    /** Submit multiple calls as a single sponsored UserOp (or sequential direct
+     *  writes if sponsored: false). Atomic on smart-account paths only. */
+    writeBatch,
     sponsorshipMode,
     /** Convenience: true when either sponsored path is viable for this org+wallet. */
     isSponsorshipAvailable: sponsorshipMode !== "none",

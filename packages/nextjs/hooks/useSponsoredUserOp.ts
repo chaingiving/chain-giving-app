@@ -31,11 +31,12 @@ export function useSponsoredUserOp(orgAddress: Address | undefined) {
   const [smartAddress, setSmartAddress] = useState<Address>();
   const [isPending, setIsPending] = useState(false);
 
-  const sendCall = useCallback(
-    async (call: Call) => {
+  const sendCalls = useCallback(
+    async (calls: Call[]) => {
       if (!walletClient) throw new Error("Wallet not connected");
       if (!publicClient) throw new Error("Public client not available for chain");
       if (!orgAddress) throw new Error("Missing sponsoring org address");
+      if (calls.length === 0) throw new Error("No calls to send");
 
       setIsPending(true);
       try {
@@ -47,14 +48,16 @@ export function useSponsoredUserOp(orgAddress: Address | undefined) {
         });
         setSmartAddress(client.account.address);
 
-        const data = encodeFunctionData({
-          abi: call.abi as Abi,
-          functionName: call.functionName,
-          args: call.args ?? [],
-        });
-
         const userOpHash = await client.sendUserOperation({
-          calls: [{ to: call.address, data, value: call.value ?? 0n }],
+          calls: calls.map(c => ({
+            to: c.address,
+            data: encodeFunctionData({
+              abi: c.abi as Abi,
+              functionName: c.functionName,
+              args: c.args ?? [],
+            }),
+            value: c.value ?? 0n,
+          })),
         });
         return client.waitForUserOperationReceipt({ hash: userOpHash });
       } finally {
@@ -64,5 +67,8 @@ export function useSponsoredUserOp(orgAddress: Address | undefined) {
     [walletClient, publicClient, orgAddress, targetNetwork],
   );
 
-  return { sendCall, smartAddress, isPending };
+  // Backwards-compatible single-call wrapper.
+  const sendCall = useCallback((call: Call) => sendCalls([call]), [sendCalls]);
+
+  return { sendCall, sendCalls, smartAddress, isPending };
 }
