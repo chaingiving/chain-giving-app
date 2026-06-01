@@ -8,7 +8,7 @@ import { useAccount, useReadContract, useReadContracts } from "wagmi";
 import { ProgramCard } from "~~/components/ProgramCard";
 import { cgOrganizationAbi } from "~~/contracts/cgOrganizationAbi";
 import { cgProgramAbi } from "~~/contracts/cgProgramAbi";
-import { useScaffoldReadContract, useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
+import { useScaffoldReadContract, useScaffoldWriteContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { useOrgGasSponsorship } from "~~/hooks/useOrgGasSponsorship";
 import { useSponsoredWrite } from "~~/hooks/useSponsoredWrite";
 
@@ -79,6 +79,8 @@ export const CGOrganizationView = ({ address }: { address: Address }) => {
   });
 
   const { orgBalanceFormatted, isLoading: sponsorshipLoading } = useOrgGasSponsorship(address);
+  const { targetNetwork } = useTargetNetwork();
+  const gasSymbol = targetNetwork.nativeCurrency?.symbol ?? "ETH";
 
   // Direct write to CGPaymaster for depositing sponsorship funds (not itself sponsored)
   const { writeContractAsync: depositForOrg, isPending: isDepositing } = useScaffoldWriteContract({
@@ -150,7 +152,9 @@ export const CGOrganizationView = ({ address }: { address: Address }) => {
               {sponsorshipLoading ? (
                 <span className="loading loading-dots loading-xs" />
               ) : (
-                <span className="font-medium">{orgBalanceFormatted ?? "0"} ETH</span>
+                <span className="font-medium">
+                  {orgBalanceFormatted ?? "0"} {gasSymbol}
+                </span>
               )}
               <button className="btn btn-secondary btn-xs" onClick={() => setSponsorshipOpen(o => !o)}>
                 {sponsorshipOpen ? "Hide" : "Deposit"}
