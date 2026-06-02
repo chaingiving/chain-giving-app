@@ -8,6 +8,7 @@ import {
   type PublicClient,
   type Transport,
   type WalletClient,
+  createPublicClient,
   http,
   numberToHex,
   toHex,
@@ -46,11 +47,23 @@ type GetKernelClientArgs = {
   orgAddress: Address;
 };
 
-export async function getKernelClient({ walletClient, publicClient, chain, orgAddress }: GetKernelClientArgs) {
+/** Build a raw publicClient bound to the chain's HTTP RPC, bypassing wagmi's
+ *  adapter wrapping. Reown's embedded wallet routes some wagmi-provided RPC
+ *  calls through the W3mFrame, which allowlists a narrow set of methods and
+ *  rejects creation-style `eth_call` ({data, no to}) — the exact shape
+ *  Pimlico's getSenderAddress uses to derive a Kernel's counterfactual
+ *  address. We need a wallet-free path for those reads. */
+function chainPublicClient(chain: Chain) {
+  const url = chain.rpcUrls?.default?.http?.[0];
+  return createPublicClient({ chain, transport: url ? http(url) : http() });
+}
+
+export async function getKernelClient({ walletClient, chain, orgAddress }: GetKernelClientArgs) {
   const owner = assertWalletWithAccount(walletClient);
+  const rawClient = chainPublicClient(chain);
 
   const account = await toKernelSmartAccount({
-    client: publicClient,
+    client: rawClient,
     entryPoint: ENTRY_POINT,
     owners: [owner],
     version: KERNEL_VERSION,
@@ -141,12 +154,19 @@ async function callPaymaster(
 
 /** Returns the counterfactual Kernel address for an EOA without instantiating
  *  the full client — useful for showing the address in the UI before any
- *  sponsored UserOp has been sent. */
+ *  sponsored UserOp has been sent.
+ *
+ *  The passed `publicClient` is ignored in favour of a freshly built
+ *  chain-bound HTTP client — see chainPublicClient(). Reown's embedded wallet
+ *  rejects Pimlico's creation-style `eth_call`, so we must avoid any client
+ *  whose transport routes through the wallet provider. */
 export async function deriveKernelAddress(publicClient: PublicClient, walletClient: WalletClient): Promise<Address> {
   if (!walletClient.account) return zeroAddress;
+  const chain = publicClient.chain;
+  if (!chain) return zeroAddress;
   const owner = assertWalletWithAccount(walletClient);
   const account = await toKernelSmartAccount({
-    client: publicClient,
+    client: chainPublicClient(chain),
     entryPoint: ENTRY_POINT,
     owners: [owner],
     version: KERNEL_VERSION,

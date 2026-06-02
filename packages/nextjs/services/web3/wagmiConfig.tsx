@@ -43,6 +43,17 @@ const wagmiAdapter = new WagmiAdapter({
   connectors: wagmiConnectors(),
 });
 
+// Reown's blockchain-api proxy doesn't route chains it hasn't onboarded; for
+// those we have to feed AppKit the RPC URL directly via customRpcUrls so the
+// embedded wallet (W3mFrame) bypasses the proxy and hits the chain RPC
+// straight. Keyed by CAIP-2 chain id; the value is an array of { url } so
+// AppKit can fall back across multiple endpoints.
+const customRpcUrls: Record<string, { url: string }[]> = {};
+for (const chain of enabledChains) {
+  const url = chain.rpcUrls?.default?.http?.[0];
+  if (url) customRpcUrls[`eip155:${chain.id}`] = [{ url }];
+}
+
 // createAppKit instantiates Reown's Lit-based modal web components, which can't
 // run during SSG/SSR. Defer to the client.
 if (typeof window !== "undefined") {
@@ -50,6 +61,17 @@ if (typeof window !== "undefined") {
     adapters: [wagmiAdapter],
     projectId: scaffoldConfig.walletConnectProjectId,
     networks: enabledChains as any,
+    customRpcUrls,
+    // Without metadata.icons set, Reown's modal fetches
+    // api.web3modal.com/public/getAssetImage/undefined → 404 + a loopback-CORS
+    // warning on localhost. Point at our own logo to silence it. Safe to read
+    // window.location here — we're inside the typeof-window-defined guard.
+    metadata: {
+      name: "Chain.Giving",
+      description: "Charitable giving programs with ETH crowdfunding + ERC-1155 token distribution",
+      url: window.location.origin,
+      icons: [`${window.location.origin}/logo.svg`],
+    },
     features: {
       email: true,
       socials: ["google", "apple", "facebook", "discord", "github"],
@@ -57,6 +79,12 @@ if (typeof window !== "undefined") {
       emailShowWallets: false,
       collapseWallets: true,
       allWallets: false,
+      // Trim Reown's modal to the auth surface only. Chain.Giving funds users
+      // via the org's paymaster — the on-ramp (auto-popup on zero balance),
+      // swap, and send tabs add no value and clutter the wallet UX.
+      onramp: false,
+      swaps: false,
+      send: false,
     },
   });
 }
