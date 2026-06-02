@@ -1,49 +1,56 @@
 # Chain.Giving Gas Sponsoring
 
-This document describes how the live `CGPaymaster` + smart-account stack
-implements the gas-sponsorship goals listed in section 1, and which calls are
-actually sponsored vs paid by the user. The role-based framing from the
-original spec is preserved as the product target; the implementation chapters
-explain where reality matches and where pragmatic divergence was necessary.
+Gas sponsorship in Chain.Giving is delivered by `CGPaymaster`, an ERC-4337
+v0.7 paymaster that is funded per-organization and pays for a tight set of
+beneficiary-facing CGToken operations. Each organization holds its own gas
+budget inside the paymaster; sponsored UserOps from any beneficiary against
+that organization's contracts draw from it. Donors and organization admins
+pay their own gas.
 
-## 1. Roles and Sponsorship Targets
+## 1. Roles
 
-### Beneficiary gas sponsorship
+### Beneficiaries
 
-All beneficiary wallet transactions that move or burn **CG tokens** are
-sponsored by the issuing organization. A beneficiary receiving a CGToken
-voucher, transferring it to a redeeming party, or burning it on redemption
-never needs to hold the chain's native gas token. The first sponsored token
-op from a given owner bundles a signed operator approval with the actual call
-so no separate "prep" transaction is required (see §6).
+Every CGToken operation a beneficiary needs to perform — receiving a
+voucher, transferring it to a redeeming party, burning it on redemption —
+is sponsored by the issuing organization. A beneficiary never needs to
+hold the chain's native gas token to use their tokens. The first
+sponsored op from a given owner bundles a signed operator approval with
+the actual call, so no separate setup transaction is needed (see §5).
 
-The fundraising side (donations, refunds, cancellations) is **not** sponsored
-in the current implementation — see §5 for why and what replaced it.
+### Donors
 
-### Organization owner gas sponsorship
+Donations, contribution cancellations, and refunds run as direct
+transactions from the donor's wallet — they pay their own gas. This is
+an architectural constraint, not a policy choice: USDC's `permit` only
+verifies ECDSA signatures, so a smart-account `msg.sender` cannot pull
+tokens from a donor's EOA. Donations go through `donateWithPermit2`
+where Permit2 is deployed (one signature, one transaction) and fall back
+to `approve` + `donate` otherwise.
+
+### Organization owners
 
 Organization admin work — defining token types, creating distributions,
-setting beneficiaries, executing programs, withdrawing crowdfund proceeds —
-is **not** sponsored. The original spec called for org owners to "set up
-programs without having to obtain any gas tokens"; in practice, owner-only
-calls are kept off the sponsorship allowlist because an attacker controlling
-an admin key could otherwise drain the org's gas budget through reverting
-admin calls (see `CGPaymaster.sol:107-108`). Owner ops run as direct
-transactions from the org owner's wallet.
+setting beneficiaries, executing programs, withdrawing crowdfund
+proceeds — runs as direct transactions from the owner's wallet. Owner
+calls are kept off the sponsorship allowlist as a drain-prevention
+measure: an attacker who briefly controlled an admin key could otherwise
+spam reverting admin UserOps and burn through the org's gas budget
+without ever executing successfully.
 
-The "stash of funds" the original spec described is implemented as the org's
-balance inside `CGPaymaster`, used to sponsor beneficiary CGToken ops on the
-org's behalf.
+The organization's stash of funds inside `CGPaymaster` is what pays for
+the beneficiary-side sponsorship described above. Owners are expected to
+keep that stash topped up.
 
-### Chain.Giving registry owner & global administrators
+### Chain.Giving registry owner
 
-Registry-level work (deploying CGRegistry, transferring its ownership,
-upgrading the paymaster) pays its own gas. The deployer is the default
-paymaster owner and can withdraw unused balance from any unmanaged org's
-stash, transfer management of an org's stash to its owner, and adjust the
-low-balance threshold — see §7. The deployer is responsible for monitoring
-org balances and topping them up (potentially invoiced off-chain) until an
-org self-manages.
+The registry owner (the deployer of `CGRegistry` and `CGPaymaster`) pays
+their own gas for registry-level work. They are the default manager of
+every organization's stash and can withdraw unused balance, hand off
+stash management to the org's owner, and adjust the low-balance alert
+threshold (see §6). Default-day-to-day responsibility is to monitor each
+org's balance and top it up — possibly billed back to the org off-chain
+as a service fee — until the org chooses to self-manage.
 
 ## 2. Implementation Overview
 
@@ -175,7 +182,7 @@ non-owner, user-facing CGToken operations:
 | `0xf242432a` | `safeTransferFrom(address,address,uint256,uint256,bytes)` | Beneficiary moves a voucher/badge |
 | `0x2eb2c2d6` | `safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)` | Bulk transfer |
 | `0xa22cb465` | `setApprovalForAll(address,bool)` | Operator approval (rare on the user path; mostly the signed variant below is used) |
-| `0xe9f4197a` | `setApprovalForAllWithSignature(address,address,bool,uint256,bytes)` | Signed approval bootstrap — see §6 |
+| `0xe9f4197a` | `setApprovalForAllWithSignature(address,address,bool,uint256,bytes)` | Signed approval bootstrap — see §5 |
 | `0xf5298aca` | `burn(address,uint256,uint256)` | Holder destroys their voucher (redemption pattern) |
 | `0x6b20c454` | `burnBatch(address,uint256[],uint256[])` | Bulk burn |
 
@@ -203,25 +210,26 @@ This includes (non-exhaustive):
 - `CGCrowdfunding.cancel`, `withdraw`, `donateFor`
 - `CGDistribution.markReady`, `airdrop`, owner-only setters
 
-### Donate / cancel / refund — pruned from the allowlist
+### Donate / cancel / refund
 
-In an earlier iteration these *were* sponsored. They were removed in commit
-`0921130` because of a fundamental identity-split: USDC's `permit` only
-verifies ECDSA signatures (no ERC-1271), so a sponsored UserOp with the
-smart account as `msg.sender` cannot permit-spend tokens held at the EOA
-nor can the EOA's tokens be pulled by a smart-account-signed transfer.
-The current flows run as direct EOA writes:
+Fundraising-side flows are intentionally not on the allowlist. The
+constraint is that USDC's `permit` only verifies ECDSA signatures (no
+ERC-1271), so a sponsored UserOp with a smart account as `msg.sender`
+cannot permit-spend tokens held at the donor's EOA, and the EOA's tokens
+cannot be pulled by a transfer signed by the smart account. The flows
+that move donor funds therefore run as direct EOA writes:
 
-- **Donations** — direct write of `donateWithPermit2` (when Permit2 is
-  deployed on the chain) or `donate` after a one-time `approve`. Permit2
-  is the preferred path because wallets render its signatures with a
+- **Donations** — direct write of `donateWithPermit2` where Permit2 is
+  deployed (one signature, one tx, no approval needed beyond a one-time
+  `approve(Permit2, max)`), or `approve` + `donate` otherwise. Permit2
+  is preferred because wallets recognize its signatures and render a
   friendlier UI than raw ERC-2612 permits.
-- **`cancelContribution` / `refund`** — direct write from the donor's EOA,
-  because the contributions ledger is keyed by `msg.sender` of the original
-  donation, which is the EOA.
+- **`cancelContribution` / `refund`** — direct write from the donor's
+  EOA, because the contributions ledger is keyed by `msg.sender` of the
+  donation transaction, which is the EOA itself.
 
-These flows are documented further in `cg-frontend.md` and in `donate`
-handlers under `app/program/[address]/_components/CGProgramView.tsx`.
+These flows are documented further in `cg-frontend.md` and in the
+donate handlers under `app/program/[address]/_components/CGProgramView.tsx`.
 
 ## 5. The Signed-Approval Bootstrap for CGToken Transfers
 
