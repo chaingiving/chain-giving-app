@@ -1,24 +1,30 @@
-import { useEffect, useMemo } from "react";
-import { useAccount } from "wagmi";
+import { useMemo } from "react";
+import { useParams } from "next/navigation";
 import scaffoldConfig from "~~/scaffold.config";
-import { useGlobalState } from "~~/services/store/store";
-import { ChainWithAttributes } from "~~/utils/scaffold-eth";
-import { NETWORKS_EXTRA_DATA } from "~~/utils/scaffold-eth";
+import { ChainWithAttributes, NETWORKS_EXTRA_DATA, chainForSlug } from "~~/utils/scaffold-eth";
 
 /**
- * Retrieves the connected wallet's network from scaffold.config or defaults to the 0th network in the list if the wallet is not connected.
+ * The active network is encoded in the URL as the first path segment
+ * (`/baseSepolia/...`, `/arcTestnet/...`, ...). This hook reads it from
+ * `useParams()`.
+ *
+ * If the URL doesn't have a network segment (e.g. on `/api/*` or the root
+ * redirect mid-flight) we fall back to the first configured target network.
+ *
+ * A useful read-only mirror of "which chain is the user looking at right now",
+ * separate from `useAccount().chain` which is "which chain the wallet is on".
+ * Those can diverge: the wallet might still be on Base Sepolia while the user
+ * navigated to /arcTestnet/programs, and we'll render Arc Testnet data
+ * regardless.
  */
 export function useTargetNetwork(): { targetNetwork: ChainWithAttributes } {
-  const { chain } = useAccount();
-  const targetNetwork = useGlobalState(({ targetNetwork }) => targetNetwork);
-  const setTargetNetwork = useGlobalState(({ setTargetNetwork }) => setTargetNetwork);
+  const params = useParams();
+  const slug = typeof params?.network === "string" ? params.network : undefined;
 
-  useEffect(() => {
-    const newSelectedNetwork = scaffoldConfig.targetNetworks.find(targetNetwork => targetNetwork.id === chain?.id);
-    if (newSelectedNetwork && newSelectedNetwork.id !== targetNetwork.id) {
-      setTargetNetwork({ ...newSelectedNetwork, ...NETWORKS_EXTRA_DATA[newSelectedNetwork.id] });
-    }
-  }, [chain?.id, setTargetNetwork, targetNetwork.id]);
-
-  return useMemo(() => ({ targetNetwork }), [targetNetwork]);
+  return useMemo(() => {
+    const resolved = chainForSlug(slug);
+    if (resolved) return { targetNetwork: resolved };
+    const fallback = scaffoldConfig.targetNetworks[0];
+    return { targetNetwork: { ...fallback, ...NETWORKS_EXTRA_DATA[fallback.id] } };
+  }, [slug]);
 }

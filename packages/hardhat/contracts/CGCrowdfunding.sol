@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { IERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -23,6 +24,10 @@ contract CGCrowdfunding is Ownable {
     IERC20 public immutable token;
     uint256 public immutable fundingTarget;
     uint256 public immutable deadline;
+    /// @notice Minimum donation amount in token base units. Equals 10**decimals (i.e. one full
+    ///         token) so each accepted donation dwarfs sponsored gas — making dust-flood
+    ///         griefing against a CGPaymaster budget economically irrational.
+    uint256 public immutable minDonation;
     State public state;
 
     mapping(address => uint256) public contributions;
@@ -48,6 +53,7 @@ contract CGCrowdfunding is Ownable {
     error DeadlineInPast();
     error ZeroAddress();
     error UnexpectedTransferAmount();
+    error BelowMinDonation(uint256 minRequired, uint256 provided);
 
     constructor(address owner_, address token_, uint256 target_, uint256 deadline_) Ownable(owner_) {
         if (token_ == address(0)) revert ZeroAddress();
@@ -57,6 +63,16 @@ contract CGCrowdfunding is Ownable {
         fundingTarget = target_;
         deadline = deadline_;
         state = State.ACTIVE;
+
+        // Resolve token decimals defensively — IERC20 does not require decimals(),
+        // and tokens with no code or non-standard implementations should not block deployment.
+        uint8 decimals;
+        try IERC20Metadata(token_).decimals() returns (uint8 d) {
+            decimals = d;
+        } catch {
+            decimals = 18;
+        }
+        minDonation = 10 ** uint256(decimals);
     }
 
     /// @notice Tracked donations + direct transfers. Returns frozen total once WITHDRAWN.
@@ -99,6 +115,7 @@ contract CGCrowdfunding is Ownable {
         if (state != State.ACTIVE) revert NotInState(State.ACTIVE, state);
         if (block.timestamp > deadline) revert DeadlinePassed();
         if (amount == 0) revert NoContribution();
+        if (amount < minDonation) revert BelowMinDonation(minDonation, amount);
 
         uint256 balanceBefore = token.balanceOf(address(this));
         token.safeTransferFrom(msg.sender, address(this), amount);

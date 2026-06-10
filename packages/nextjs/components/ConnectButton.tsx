@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
 import { useAppKit } from "@reown/appkit/react";
 import { useAccount } from "wagmi";
 import { EnvelopeIcon } from "@heroicons/react/24/outline";
+import { useIsHomePage } from "~~/hooks/useIsHomePage";
 
 type Props = {
   hideOnHome?: boolean;
@@ -12,12 +12,12 @@ type Props = {
 };
 
 const EmbeddedWalletButtonInner = ({ hideOnHome = false, size = "sm" }: Props) => {
-  const pathname = usePathname();
+  const isHome = useIsHomePage();
   const { isConnected } = useAccount();
   const { open } = useAppKit();
 
   if (isConnected) return null;
-  if (hideOnHome && pathname === "/") return null;
+  if (hideOnHome && isHome) return null;
 
   const btnSize = size === "md" ? "btn-md" : "btn-sm";
 

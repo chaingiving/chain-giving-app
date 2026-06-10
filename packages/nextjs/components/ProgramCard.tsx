@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { Address as AddressDisplay } from "@scaffold-ui/components";
 import { Address } from "viem";
-import { useReadContract } from "wagmi";
 import { cgProgramAbi } from "~~/contracts/cgProgramAbi";
+import { useNetworkHref } from "~~/hooks/scaffold-eth";
+import { useReadContract } from "~~/hooks/scaffold-eth/useNetworkRead";
 
 export const PROGRAM_STATES = ["Active", "Executing", "Completed", "Cancelled"] as const;
 const PROGRAM_STATE_COLORS = ["badge-cg", "badge-warning", "badge-info", "badge-error"] as const;
@@ -33,9 +34,13 @@ export const ProgramCard = ({
   });
 
   const stateIndex = Number(state ?? 0);
+  const networkHref = useNetworkHref();
 
   return (
-    <Link href={`/program/${address}`} className="card bg-base-100 shadow-md hover:shadow-lg transition-shadow">
+    <Link
+      href={networkHref(`/program/${address}`)}
+      className="card bg-base-100 shadow-md hover:shadow-lg transition-shadow"
+    >
       <div className="card-body p-4">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 flex-wrap min-w-0">

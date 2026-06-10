@@ -3,18 +3,23 @@ import { Address, Hex, isAddress } from "viem";
 import deployedContracts from "~~/contracts/deployedContracts";
 
 /**
- * ERC-7677 Paymaster Service for CGPaymaster.
+ * ERC-7677 Paymaster Service for CGPaymaster (EntryPoint v0.7).
  *
- * Wallets that support EIP-5792 `paymasterService` capability will call this
- * endpoint with JSON-RPC methods `pm_getPaymasterStubData` and
- * `pm_getPaymasterData`.
+ * Wallets supporting EIP-5792 `paymasterService` capability call this endpoint
+ * with `pm_getPaymasterStubData` / `pm_getPaymasterData`. Our own Kernel-via-Pimlico
+ * client (services/web3/smartAccount.ts) calls the same methods.
  *
- * The CGPaymaster's `paymasterAndData` layout is:
- *   [0:20]  paymaster contract address
- *   [20:40] sponsoring organization address
+ * Response shape is the EntryPoint v0.7 form (separate fields, not a packed blob).
+ * The caller (wallet or bundler) assembles paymasterAndData itself:
+ *   [0 :20] paymaster
+ *   [20:36] paymasterVerificationGasLimit (uint128)
+ *   [36:52] paymasterPostOpGasLimit       (uint128)
+ *   [52: …] paymasterData  ← we return the sponsoring org address here (20 bytes)
  *
- * The org address is passed via the `context.orgAddress` field from the frontend.
- * The chain ID is extracted from `params[2]` to resolve the correct CGPaymaster deployment.
+ * Params layout (ERC-7677):
+ *   [0] userOp, [1] entryPoint, [2] chainId (hex), [3] context
+ *
+ * The sponsoring org address is passed via `context.orgAddress` from the frontend.
  */
 
 type JsonRpcRequest = {
@@ -24,15 +29,20 @@ type JsonRpcRequest = {
   params: unknown[];
 };
 
+// EntryPoint v0.7 canonical singleton. CGPaymaster is hardwired to this version;
+// reject any caller that targets a different EntryPoint.
+const ENTRY_POINT_V07 = "0x0000000071727De22E5E9d8BAf0edAc6f37da032".toLowerCase();
+
+// Gas headroom for paymaster validation/postOp. These end up in bytes 20..52 of
+// paymasterAndData. Chosen to comfortably cover CGPaymaster's actual cost
+// (~46k for validate, ~25-32k for postOp on observed runs) with margin for cold
+// storage reads on the first sponsored UserOp per org.
+const PAYMASTER_VERIFICATION_GAS_LIMIT: Hex = "0x10000"; // 65 536
+const PAYMASTER_POST_OP_GAS_LIMIT: Hex = "0x8000"; //       32 768
+
 function getPaymasterAddress(chainId: number): Address | undefined {
   const contracts = (deployedContracts as Record<number, any>)[chainId];
   return contracts?.CGPaymaster?.address as Address | undefined;
-}
-
-function buildPaymasterAndData(paymasterAddr: Address, orgAddr: Address): Hex {
-  // paymasterAndData = [20-byte paymaster address][20-byte org address]
-  // Both are 0x-prefixed hex, so strip the 0x from orgAddr and concatenate
-  return `${paymasterAddr}${orgAddr.slice(2)}` as Hex;
 }
 
 function jsonRpcError(id: number | string | null, code: number, message: string) {
@@ -59,8 +69,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Both methods receive the same params shape:
-  // [userOp, entryPoint, chainId, context]
+  // params[1] = entry point address; reject anything other than v0.7
+  const entryPoint = params?.[1];
+  if (typeof entryPoint !== "string" || entryPoint.toLowerCase() !== ENTRY_POINT_V07) {
+    return jsonRpcError(id, -32602, `Unsupported EntryPoint: ${String(entryPoint)} (expected v0.7)`);
+  }
+
+  // params[2] = chainId (hex or decimal)
   const rawChainId = params?.[2];
   const chainId =
     typeof rawChainId === "string" ? parseInt(rawChainId, 16) : typeof rawChainId === "number" ? rawChainId : undefined;
@@ -81,35 +96,20 @@ export async function POST(req: NextRequest) {
     return jsonRpcError(id, -32602, "Missing or invalid context.orgAddress");
   }
 
-  const paymasterAndData = buildPaymasterAndData(paymasterAddress, orgAddress as Address);
-
-  switch (method) {
-    case "pm_getPaymasterStubData": {
-      // Return stub data for gas estimation. The wallet uses this to estimate
-      // gas before requesting the final paymaster data.
-      return NextResponse.json({
-        jsonrpc: "2.0",
-        id,
-        result: {
-          paymasterAndData,
-        },
-      });
-    }
-
-    case "pm_getPaymasterData": {
-      // Return final paymaster data for the actual UserOperation.
-      // For CGPaymaster, stub and final data are identical since there is
-      // no off-chain signature required.
-      return NextResponse.json({
-        jsonrpc: "2.0",
-        id,
-        result: {
-          paymasterAndData,
-        },
-      });
-    }
-
-    default:
-      return jsonRpcError(id, -32601, `Unknown method: ${method}`);
+  // For CGPaymaster, stub and final data are identical — validation is fully
+  // on-chain and there is no signing service.
+  if (method !== "pm_getPaymasterStubData" && method !== "pm_getPaymasterData") {
+    return jsonRpcError(id, -32601, `Unknown method: ${method}`);
   }
+
+  return NextResponse.json({
+    jsonrpc: "2.0",
+    id,
+    result: {
+      paymaster: paymasterAddress,
+      paymasterData: orgAddress as Hex,
+      paymasterVerificationGasLimit: PAYMASTER_VERIFICATION_GAS_LIMIT,
+      paymasterPostOpGasLimit: PAYMASTER_POST_OP_GAS_LIMIT,
+    },
+  });
 }

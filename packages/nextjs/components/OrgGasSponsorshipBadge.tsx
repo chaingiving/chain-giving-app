@@ -1,6 +1,7 @@
 "use client";
 
 import { Address, formatEther } from "viem";
+import { useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { useOrgGasSponsorship } from "~~/hooks/useOrgGasSponsorship";
 
 /**
@@ -10,6 +11,8 @@ import { useOrgGasSponsorship } from "~~/hooks/useOrgGasSponsorship";
  */
 export const OrgGasSponsorshipBadge = ({ orgAddress }: { orgAddress: Address }) => {
   const { hasBudget, orgBalance, isLoading } = useOrgGasSponsorship(orgAddress);
+  const { targetNetwork } = useTargetNetwork();
+  const gasSymbol = targetNetwork.nativeCurrency?.symbol ?? "ETH";
 
   if (isLoading) {
     return <span className="loading loading-dots loading-xs" />;
@@ -29,7 +32,7 @@ export const OrgGasSponsorshipBadge = ({ orgAddress }: { orgAddress: Address }) 
   return (
     <div
       className="tooltip tooltip-bottom"
-      data-tip={`Transactions will be sponsored from this organization's gas budget (${formatEther(orgBalance ?? 0n)} ETH remaining)`}
+      data-tip={`Transactions will be sponsored from this organization's gas budget (${formatEther(orgBalance ?? 0n)} ${gasSymbol} remaining)`}
     >
       <span className="badge badge-success badge-lg gap-1">
         <GasIcon />

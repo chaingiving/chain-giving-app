@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { getIronSession } from "iron-session";
 import { type Chain, createPublicClient, getAddress, http } from "viem";
-import { baseSepolia, hardhat, mainnet, sepolia } from "viem/chains";
+import { arcTestnet, baseSepolia, hardhat, mainnet, sepolia } from "viem/chains";
 import { parseSiweMessage, verifySiweMessage } from "viem/siwe";
 import { assertSameOrigin } from "~~/utils/origin";
 import { type SiweSessionData, getSessionOptions } from "~~/utils/siwe";
@@ -13,6 +13,7 @@ const SUPPORTED_CHAINS: Record<number, Chain> = {
   [mainnet.id]: mainnet,
   [sepolia.id]: sepolia,
   [baseSepolia.id]: baseSepolia,
+  [arcTestnet.id]: arcTestnet,
   [hardhat.id]: hardhat,
 };
 

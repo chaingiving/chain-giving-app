@@ -152,6 +152,20 @@ for (const tokenContract of TOKENS) {
         );
       });
 
+      it("reverts on dust amount below minDonation (10^decimals)", async () => {
+        await token.connect(donor1).approve(await crowdfunding.getAddress(), ONE);
+        // ONE - 1 = 0.999999 USDC, just below the 1 USDC floor
+        await expect(crowdfunding.connect(donor1).donate(ONE - 1n))
+          .to.be.revertedWithCustomError(crowdfunding, "BelowMinDonation")
+          .withArgs(ONE, ONE - 1n);
+      });
+
+      it("accepts exactly minDonation (1 full token unit)", async () => {
+        await token.connect(donor1).approve(await crowdfunding.getAddress(), ONE);
+        await expect(crowdfunding.connect(donor1).donate(ONE)).to.not.be.reverted;
+        expect(await crowdfunding.minDonation()).to.equal(ONE);
+      });
+
       it("reverts after deadline", async () => {
         await token.connect(donor1).approve(await crowdfunding.getAddress(), ONE);
         await time.increaseTo(deadline + 1);

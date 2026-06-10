@@ -16,7 +16,8 @@ import {
 } from "@heroicons/react/24/outline";
 import { SwitchTheme } from "~~/components/SwitchTheme";
 import { FaucetButton, RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
-import { useOutsideClick, useTargetNetwork } from "~~/hooks/scaffold-eth";
+import { useNetworkHref, useOutsideClick, useTargetNetwork } from "~~/hooks/scaffold-eth";
+import { useEffectiveAddress } from "~~/hooks/useEffectiveAddress";
 import { useIsAdmin } from "~~/hooks/useIsAdmin";
 
 type HeaderMenuLink = {
@@ -44,16 +45,20 @@ export const menuLinks: HeaderMenuLink[] = [
 
 export const HeaderMenuLinks = () => {
   const pathname = usePathname();
-  const { address: connectedAddress } = useAccount();
+  const networkHref = useNetworkHref();
+  // Use the effective on-chain identity so the "Wallet" link points to the
+  // Kernel address for social/email logins (where donations land) rather than
+  // the raw EOA — they'd otherwise see an empty wallet page.
+  const { address: effectiveAddress } = useEffectiveAddress();
   const isAdmin = useIsAdmin();
 
   const allLinks: HeaderMenuLink[] = [
-    ...menuLinks,
-    ...(connectedAddress
+    ...menuLinks.map(l => ({ ...l, href: networkHref(l.href) })),
+    ...(effectiveAddress
       ? [
           {
             label: "Wallet",
-            href: `/wallet/${connectedAddress}`,
+            href: networkHref(`/wallet/${effectiveAddress}`),
             icon: <WalletIcon className="h-4 w-4" />,
           },
         ]
@@ -62,7 +67,7 @@ export const HeaderMenuLinks = () => {
       ? [
           {
             label: "Debug",
-            href: "/debug",
+            href: networkHref("/debug"),
             icon: <BugAntIcon className="h-4 w-4" />,
           },
         ]
@@ -102,6 +107,7 @@ export const HeaderMenuLinks = () => {
  */
 export const Header = () => {
   const { targetNetwork } = useTargetNetwork();
+  const networkHref = useNetworkHref();
   const { isConnected } = useAccount();
   const isLocalNetwork = targetNetwork.id === hardhat.id;
 
@@ -129,7 +135,7 @@ export const Header = () => {
             </li>
           </ul>
         </details>
-        <Link href="/" passHref className="hidden lg:flex items-center gap-2 ml-4 mr-6 shrink-0">
+        <Link href={networkHref("/")} passHref className="hidden lg:flex items-center gap-2 ml-4 mr-6 shrink-0">
           <div className="flex relative w-10 h-10">
             <Image alt="SE2 logo" className="cursor-pointer" fill src="/logo.svg" />
           </div>

@@ -2,8 +2,9 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
 import { ethers } from "hardhat";
 
-// ERC-4337 EntryPoint v0.6 — deterministically deployed at the same address on all EVM chains.
-const ENTRY_POINT_V06 = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789";
+// ERC-4337 EntryPoint v0.7 — canonical singleton, deterministically deployed at the same
+// address on every EVM chain (Base, Base Sepolia, Optimism, Arbitrum, mainnet, …).
+const ENTRY_POINT_V07 = "0x0000000071727De22E5E9d8BAf0edAc6f37da032";
 
 // Emit a LowBalance event when an org's gas stash falls below 0.01 ETH.
 const LOW_BALANCE_THRESHOLD = ethers.parseEther("0.01");
@@ -25,7 +26,7 @@ const deployCGPaymaster: DeployFunction = async function (hre: HardhatRuntimeEnv
     });
     entryPointAddress = mockEntryPoint.address;
   } else {
-    entryPointAddress = ENTRY_POINT_V06;
+    entryPointAddress = ENTRY_POINT_V07;
   }
 
   await deploy("CGPaymaster", {

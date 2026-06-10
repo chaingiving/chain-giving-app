@@ -33,6 +33,11 @@ const config: HardhatUserConfig = {
             // https://docs.soliditylang.org/en/latest/using-the-compiler.html#optimizer-options
             runs: 200,
           },
+          // CGComponentFactory embeds creation bytecode for CGToken,
+          // CGCrowdfunding, CGDistribution and bumps against the 24576-byte
+          // EIP-170 cap. viaIR enables the Yul IR pipeline which shrinks these
+          // factory-heavy contracts by ~10-15%.
+          viaIR: true,
         },
       },
     ],
@@ -131,6 +136,10 @@ const config: HardhatUserConfig = {
     },
     celoSepolia: {
       url: "https://forno.celo-sepolia.celo-testnet.org/",
+      accounts: [deployerPrivateKey],
+    },
+    arcTestnet: {
+      url: "https://rpc.testnet.arc.network",
       accounts: [deployerPrivateKey],
     },
   },

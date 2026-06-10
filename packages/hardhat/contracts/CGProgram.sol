@@ -11,6 +11,31 @@ import { CGCrowdfunding } from "./CGCrowdfunding.sol";
 import { CGDistribution } from "./CGDistribution.sol";
 import { CGComponentFactory } from "./CGComponentFactory.sol";
 
+/// @notice Minimal subset of Uniswap Permit2 used for SignatureTransfer flows.
+///         Permit2 is deterministically deployed at the same address on every
+///         supported chain; see https://github.com/Uniswap/permit2.
+interface IPermit2 {
+    struct TokenPermissions {
+        address token;
+        uint256 amount;
+    }
+    struct PermitTransferFrom {
+        TokenPermissions permitted;
+        uint256 nonce;
+        uint256 deadline;
+    }
+    struct SignatureTransferDetails {
+        address to;
+        uint256 requestedAmount;
+    }
+    function permitTransferFrom(
+        PermitTransferFrom calldata permit,
+        SignatureTransferDetails calldata transferDetails,
+        address owner,
+        bytes calldata signature
+    ) external;
+}
+
 /// @title CGProgram — Orchestrates crowdfunding and ERC-1155 token distributions
 /// @notice Top-level contract tying one crowdfunding to one-or-more distributions.
 ///         Each distribution uses a specific token type from the shared CGToken contract.
@@ -61,6 +86,10 @@ contract CGProgram is Ownable {
     string public name;
     bool public immutable lockDistributions;
     CGComponentFactory public immutable componentFactory;
+
+    /// @notice Canonical Permit2 address — same on every chain via CREATE2 deploy.
+    ///         Used by donateWithPermit2 to bypass per-program approvals.
+    IPermit2 public constant PERMIT2 = IPermit2(0x000000000022D473030F116dDEE9F6B43aC78BA3);
     CGToken public token;
     CGCrowdfunding public crowdfunding;
     CGDistribution[] public distributions;
@@ -240,6 +269,29 @@ contract CGProgram is Ownable {
         IERC20 currency = crowdfunding.token();
         try IERC20Permit(address(currency)).permit(msg.sender, address(this), amount, permitDeadline, v, r, s) {} catch {}
         currency.safeTransferFrom(msg.sender, address(this), amount);
+        currency.forceApprove(address(crowdfunding), amount);
+        crowdfunding.donateFor(msg.sender, amount);
+    }
+
+    /// @notice Permit2-based donate. Donor signs a Permit2 PermitTransferFrom authorizing
+    ///         this program to pull `amount` of the crowdfunding currency. Requires a
+    ///         one-time `approve(PERMIT2, …)` on the token; subsequent donations need
+    ///         only a signature. Wallets recognize Permit2 signatures and render a
+    ///         non-scary UI (the spender is the well-known Permit2 contract, not this
+    ///         unverified program).
+    function donateWithPermit2(uint256 amount, uint256 nonce, uint256 deadline, bytes calldata signature) external {
+        _preDonateChecks();
+        IERC20 currency = crowdfunding.token();
+        PERMIT2.permitTransferFrom(
+            IPermit2.PermitTransferFrom({
+                permitted: IPermit2.TokenPermissions({ token: address(currency), amount: amount }),
+                nonce: nonce,
+                deadline: deadline
+            }),
+            IPermit2.SignatureTransferDetails({ to: address(this), requestedAmount: amount }),
+            msg.sender,
+            signature
+        );
         currency.forceApprove(address(crowdfunding), amount);
         crowdfunding.donateFor(msg.sender, amount);
     }

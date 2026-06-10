@@ -90,6 +90,9 @@ export const NETWORKS_EXTRA_DATA: Record<string, ChainAttributes> = {
   [chains.celoSepolia.id]: {
     color: "#476520",
   },
+  [chains.arcTestnet.id]: {
+    color: "#2775ca",
+  },
 };
 
 /**
@@ -120,11 +123,16 @@ export function getBlockExplorerTxLink(chainId: number, txnHash: string) {
 /**
  * Gives the block explorer URL for a given address.
  * Defaults to Etherscan if no (wagmi) block explorer is configured for the network.
+ *
+ * For the local hardhat chain we serve the in-app block explorer under the
+ * active `[network]` segment, so callers pass the network slug to keep the
+ * URL on the same chain (e.g. `/hardhat/blockexplorer/address/0x…`).
  */
-export function getBlockExplorerAddressLink(network: chains.Chain, address: string) {
+export function getBlockExplorerAddressLink(network: chains.Chain, address: string, networkSlug?: string) {
   const blockExplorerBaseURL = network.blockExplorers?.default?.url;
   if (network.id === chains.hardhat.id) {
-    return `/blockexplorer/address/${address}`;
+    const slug = networkSlug ?? slugForChain(network);
+    return `/${slug}/blockexplorer/address/${address}`;
   }
 
   if (!blockExplorerBaseURL) {
@@ -142,4 +150,46 @@ export function getTargetNetworks(): ChainWithAttributes[] {
     ...targetNetwork,
     ...NETWORKS_EXTRA_DATA[targetNetwork.id],
   }));
+}
+
+// ── Network URL slugs ────────────────────────────────────────────────────────
+//
+// The route tree under app/[network]/... encodes the active network as a path
+// segment (e.g. /baseSepolia/programs, /arcTestnet/program/0x…). Slugs match
+// viem's chain-export keys (`baseSepolia`, `arcTestnet`, `hardhat`) so they
+// stay in sync if we ever code-generate the list from the viem package.
+
+// Several viem chains share an id (e.g. baseSepolia + baseSepoliaPreconf both
+// export id 84532). We want the canonical chain key to win, so keep the FIRST
+// key we see per id rather than letting later exports overwrite earlier ones.
+const VIEM_CHAIN_ID_TO_KEY: Record<number, string> = (() => {
+  const map: Record<number, string> = {};
+  for (const [key, value] of Object.entries(chains)) {
+    if (!value || typeof value !== "object" || !("id" in (value as object))) continue;
+    const id = (value as { id: number }).id;
+    if (!(id in map)) map[id] = key;
+  }
+  return map;
+})();
+
+/** URL slug for a chain. Defaults to the viem chain key; falls back to `chain-<id>`. */
+export function slugForChain(chain: chains.Chain): string {
+  return VIEM_CHAIN_ID_TO_KEY[chain.id] ?? `chain-${chain.id}`;
+}
+
+/** Resolve a URL slug back to a configured target network, if any. */
+export function chainForSlug(slug: string | undefined): ChainWithAttributes | undefined {
+  if (!slug) return undefined;
+  const match = scaffoldConfig.targetNetworks.find(c => slugForChain(c) === slug);
+  return match ? { ...match, ...NETWORKS_EXTRA_DATA[match.id] } : undefined;
+}
+
+/** First configured target network's URL slug — used as the default redirect from `/`. */
+export function defaultNetworkSlug(): string {
+  return slugForChain(scaffoldConfig.targetNetworks[0]);
+}
+
+/** Prefix an in-app path with a network slug. Leading `/` is required on `path`. */
+export function networkHref(slug: string, path: string): string {
+  return `/${slug}${path === "/" ? "" : path}`;
 }
