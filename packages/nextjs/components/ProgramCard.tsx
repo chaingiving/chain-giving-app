@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { Address as AddressDisplay } from "@scaffold-ui/components";
 import { Address } from "viem";
-import { useReadContract } from "wagmi";
 import { cgProgramAbi } from "~~/contracts/cgProgramAbi";
 import { useNetworkHref } from "~~/hooks/scaffold-eth";
+import { useReadContract } from "~~/hooks/scaffold-eth/useNetworkRead";
 
 export const PROGRAM_STATES = ["Active", "Executing", "Completed", "Cancelled"] as const;
 const PROGRAM_STATE_COLORS = ["badge-cg", "badge-warning", "badge-info", "badge-error"] as const;

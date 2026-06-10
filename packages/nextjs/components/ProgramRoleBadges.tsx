@@ -1,9 +1,9 @@
 "use client";
 
 import { type Address as ViemAddress, isAddressEqual, zeroAddress } from "viem";
-import { useReadContract } from "wagmi";
 import { cgOrganizationAbi } from "~~/contracts/cgOrganizationAbi";
 import { cgProgramAbi } from "~~/contracts/cgProgramAbi";
+import { useReadContract } from "~~/hooks/scaffold-eth/useNetworkRead";
 
 const crowdfundingContributionsAbi = [
   {

@@ -4,11 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { Address as AddressDisplay } from "@scaffold-ui/components";
 import { Address, isAddressEqual } from "viem";
-import { useAccount, useReadContract } from "wagmi";
+import { useAccount } from "wagmi";
 import { TrashIcon } from "@heroicons/react/24/outline";
 import { AddressInputWithQr } from "~~/components/AddressInputWithQr";
 import { cgOrganizationAbi } from "~~/contracts/cgOrganizationAbi";
 import { useNetworkHref, useScaffoldReadContract, useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
+import { useReadContract } from "~~/hooks/scaffold-eth/useNetworkRead";
 
 const PAGE_SIZE = 10;
 

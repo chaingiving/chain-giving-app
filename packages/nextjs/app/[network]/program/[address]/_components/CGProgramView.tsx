@@ -6,7 +6,7 @@ import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useAppKit } from "@reown/appkit/react";
 import { Address as AddressDisplay } from "@scaffold-ui/components";
 import { Address, erc20Abi, formatUnits, isAddress, isAddressEqual, maxUint256, parseUnits, zeroAddress } from "viem";
-import { useAccount, usePublicClient, useReadContract, useWalletClient, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useWalletClient, useWriteContract } from "wagmi";
 import {
   ArrowDownTrayIcon,
   ArrowUpTrayIcon,
@@ -28,6 +28,7 @@ import { cgOrganizationAbi } from "~~/contracts/cgOrganizationAbi";
 import { cgProgramAbi } from "~~/contracts/cgProgramAbi";
 import { DonationCurrency, findCurrency, getDonationCurrencies } from "~~/contracts/donationCurrencies";
 import { useBlockExplorerLink, useNetworkHref, useTargetNetwork } from "~~/hooks/scaffold-eth";
+import { useReadContract } from "~~/hooks/scaffold-eth/useNetworkRead";
 import { useProgramOrganization } from "~~/hooks/useProgramOrganization";
 import { useSponsoredWrite } from "~~/hooks/useSponsoredWrite";
 import { PERMIT2_ADDRESS, signErc2612Permit, signPermit2 } from "~~/utils/permit";
@@ -439,7 +440,6 @@ function CrowdfundingSection({
   const [donateAmount, setDonateAmount] = useState("");
   const [donateMode, setDonateMode] = useState<"crypto" | "card">("crypto");
   const [isPending, setIsPending] = useState(false);
-  const { chainId } = useAccount();
   const { targetNetwork } = useTargetNetwork();
   const networkHref = useNetworkHref();
   const cfLink = useBlockExplorerLink(crowdfundingInfo?.addr);
@@ -454,11 +454,10 @@ function CrowdfundingSection({
 
   const cfAddr = crowdfundingInfo?.addr;
   const isValidCf = cfAddr && !isAddressEqual(cfAddr, zeroAddress);
-  // When the wallet is disconnected, useAccount().chainId is undefined; fall
-  // back to the target network so we can still resolve the donation currency
-  // and render an enabled donate form for visitors before they sign in.
-  const effectiveChainId = chainId ?? targetNetwork.id;
-  const currency = findCurrency(effectiveChainId, crowdfundingInfo?.currency);
+  // Resolve the donation currency against the URL-selected network: crowdfunding
+  // info is read on targetNetwork, so its currency address must be matched there
+  // (targetNetwork is URL-derived, so it's defined even for disconnected visitors).
+  const currency = findCurrency(targetNetwork.id, crowdfundingInfo?.currency);
   const symbol = currency?.symbol ?? "tokens";
   const decimals = currency?.decimals ?? 18;
 
@@ -1189,9 +1188,11 @@ function SetCrowdfundingForm({
   programAddress: Address;
   orgAddress: Address | undefined;
 }) {
-  const { chainId } = useAccount();
+  const { targetNetwork } = useTargetNetwork();
   const publicClient = usePublicClient();
-  const currencies = getDonationCurrencies(chainId);
+  // Currency options for the URL-selected network — the program (and thus its
+  // crowdfunding) lives there, not on whatever chain the wallet happens to be on.
+  const currencies = getDonationCurrencies(targetNetwork.id);
   const [currencyAddress, setCurrencyAddress] = useState<Address | "">(currencies[0]?.address ?? "");
   const [target, setTarget] = useState("");
   const [deadlineDays, setDeadlineDays] = useState("");

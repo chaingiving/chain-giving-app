@@ -1,7 +1,7 @@
 import { Address, zeroAddress } from "viem";
-import { useReadContracts } from "wagmi";
 import { cgOrganizationAbi } from "~~/contracts/cgOrganizationAbi";
 import { useScaffoldReadContract } from "~~/hooks/scaffold-eth";
+import { useReadContracts } from "~~/hooks/scaffold-eth/useNetworkRead";
 
 /**
  * Resolves the parent CGOrganization address for a given CGProgram.

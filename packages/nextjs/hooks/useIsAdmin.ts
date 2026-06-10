@@ -1,7 +1,8 @@
 import { Address, isAddressEqual } from "viem";
-import { useAccount, useReadContracts } from "wagmi";
+import { useAccount } from "wagmi";
 import { cgOrganizationAbi } from "~~/contracts/cgOrganizationAbi";
 import { useScaffoldReadContract } from "~~/hooks/scaffold-eth";
+import { useReadContracts } from "~~/hooks/scaffold-eth/useNetworkRead";
 
 /**
  * `true` when the connected wallet is the CGRegistry owner OR the owner of

@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Address as AddressDisplay, EtherInput } from "@scaffold-ui/components";
 import { Address, isAddressEqual, parseEther } from "viem";
-import { useAccount, useReadContract, useReadContracts } from "wagmi";
+import { useAccount } from "wagmi";
 import { ProgramCard } from "~~/components/ProgramCard";
 import { cgOrganizationAbi } from "~~/contracts/cgOrganizationAbi";
 import { cgProgramAbi } from "~~/contracts/cgProgramAbi";
@@ -14,6 +14,7 @@ import {
   useScaffoldWriteContract,
   useTargetNetwork,
 } from "~~/hooks/scaffold-eth";
+import { useReadContract, useReadContracts } from "~~/hooks/scaffold-eth/useNetworkRead";
 import { useOrgGasSponsorship } from "~~/hooks/useOrgGasSponsorship";
 import { useSponsoredWrite } from "~~/hooks/useSponsoredWrite";
 

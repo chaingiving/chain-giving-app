@@ -3,12 +3,13 @@
 import { useState } from "react";
 import { Address as AddressDisplay } from "@scaffold-ui/components";
 import { Address, isAddress, isAddressEqual } from "viem";
-import { useAccount, useReadContract } from "wagmi";
+import { useAccount } from "wagmi";
 import { AddressInputWithQr } from "~~/components/AddressInputWithQr";
 import { EmbeddedWalletButton } from "~~/components/ConnectButton";
 import { RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
 import { cgTokenAbi } from "~~/contracts/cgTokenAbi";
 import { useBlockExplorerLink, useNetworkHref } from "~~/hooks/scaffold-eth";
+import { useReadContract } from "~~/hooks/scaffold-eth/useNetworkRead";
 import { useCGTokenWrite } from "~~/hooks/useCGTokenWrite";
 import { useProgramOrganization } from "~~/hooks/useProgramOrganization";
 import { notification } from "~~/utils/scaffold-eth";

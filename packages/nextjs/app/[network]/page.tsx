@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { NextPage } from "next";
 import { type Address as ViemAddress, isAddressEqual } from "viem";
-import { useAccount, useReadContract } from "wagmi";
+import { useAccount } from "wagmi";
 import { HeartIcon, UserGroupIcon } from "@heroicons/react/24/outline";
 import { AccountCard } from "~~/components/AccountCard";
 import { ChainGivingHeader } from "~~/components/ChainGivingHeader";
@@ -14,6 +14,7 @@ import { ProgramRoleBadges, useProgramRoles } from "~~/components/ProgramRoleBad
 import { RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
 import { cgOrganizationAbi } from "~~/contracts/cgOrganizationAbi";
 import { useNetworkHref, useScaffoldReadContract } from "~~/hooks/scaffold-eth";
+import { useReadContract } from "~~/hooks/scaffold-eth/useNetworkRead";
 
 type VisibilityReporter = (address: ViemAddress, visible: boolean) => void;
 

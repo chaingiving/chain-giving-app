@@ -1,6 +1,7 @@
 import { Address, formatEther } from "viem";
-import { useAccount, useCapabilities, useReadContract } from "wagmi";
+import { useAccount, useCapabilities } from "wagmi";
 import { useDeployedContractInfo, useTargetNetwork } from "~~/hooks/scaffold-eth";
+import { useReadContract } from "~~/hooks/scaffold-eth/useNetworkRead";
 import { useSponsoredGasPreference } from "~~/hooks/useSponsoredGasPreference";
 
 /**

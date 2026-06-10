@@ -1,11 +1,12 @@
 "use client";
 
 import { Address } from "viem";
-import { useAccount, useReadContract } from "wagmi";
+import { useAccount } from "wagmi";
 import { ProgramCard } from "~~/components/ProgramCard";
 import { ProgramRoleBadges, useProgramRoles } from "~~/components/ProgramRoleBadges";
 import { cgOrganizationAbi } from "~~/contracts/cgOrganizationAbi";
 import { useScaffoldReadContract } from "~~/hooks/scaffold-eth";
+import { useReadContract } from "~~/hooks/scaffold-eth/useNetworkRead";
 
 const ProgramRow = ({
   programAddress,

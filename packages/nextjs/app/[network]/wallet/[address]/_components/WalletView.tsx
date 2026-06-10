@@ -5,7 +5,7 @@ import Link from "next/link";
 import { TopUpModal } from "./TopUpModal";
 import { Address as AddressDisplay } from "@scaffold-ui/components";
 import { Address, erc20Abi, formatUnits, isAddress, isAddressEqual, parseUnits } from "viem";
-import { useAccount, useBalance, useReadContract, useSendTransaction, useWriteContract } from "wagmi";
+import { useAccount, useBalance, useSendTransaction, useWriteContract } from "wagmi";
 import { ArrowDownOnSquareIcon } from "@heroicons/react/24/outline";
 import { AddressInputWithQr } from "~~/components/AddressInputWithQr";
 import { AuthProviderInfo, SignOutButton } from "~~/components/AuthSession";
@@ -15,6 +15,7 @@ import { cgProgramAbi } from "~~/contracts/cgProgramAbi";
 import { cgTokenAbi } from "~~/contracts/cgTokenAbi";
 import { DonationCurrency, getDonationCurrencies } from "~~/contracts/donationCurrencies";
 import { useBlockExplorerLink, useNetworkHref, useScaffoldReadContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
+import { useReadContract } from "~~/hooks/scaffold-eth/useNetworkRead";
 import { useCGTokenWrite } from "~~/hooks/useCGTokenWrite";
 import { useEffectiveAddress } from "~~/hooks/useEffectiveAddress";
 import { useSponsoredGasPreference } from "~~/hooks/useSponsoredGasPreference";
@@ -493,13 +494,14 @@ function NativeAssetRow({ walletAddress, isOwnWallet }: { walletAddress: Address
   const [transferTo, setTransferTo] = useState("");
   const [transferAmount, setTransferAmount] = useState("");
   const [isPending, setIsPending] = useState(false);
-  const { chainId } = useAccount();
   const { targetNetwork } = useTargetNetwork();
   const { sendTransactionAsync } = useSendTransaction();
-  const effectiveChainId = chainId ?? targetNetwork.id;
+  // Balance follows the URL-selected network, not the wallet's chain — see
+  // useNetworkRead. targetNetwork is always defined (URL-derived) so it also
+  // covers the disconnected case the old `chainId ?? targetNetwork.id` handled.
   const { data, refetch: refetchBalance } = useBalance({
     address: walletAddress,
-    chainId: effectiveChainId,
+    chainId: targetNetwork.id,
     query: { refetchInterval: 5000 },
   });
 
@@ -620,11 +622,10 @@ function NativeAssetRow({ walletAddress, isOwnWallet }: { walletAddress: Address
 // ── Donation currencies section ──────────────────────────────────────────────
 
 function DonationCurrencyBalances({ walletAddress, isOwnWallet }: { walletAddress: Address; isOwnWallet: boolean }) {
-  const { chainId } = useAccount();
   const { targetNetwork } = useTargetNetwork();
-  // When the wallet is disconnected, useAccount().chainId is undefined; fall
-  // back to the target network so the supported-currency list is still right.
-  const currencies = getDonationCurrencies(chainId ?? targetNetwork.id);
+  // Supported-currency list follows the URL-selected network, not the wallet's
+  // chain (targetNetwork is URL-derived, so it's defined even when disconnected).
+  const currencies = getDonationCurrencies(targetNetwork.id);
 
   if (currencies.length === 0) return null;
 
