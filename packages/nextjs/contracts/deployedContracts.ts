@@ -147,6 +147,11 @@ const deployedContracts = {
         },
         {
           inputs: [],
+          name: "InvalidPaymasterData",
+          type: "error",
+        },
+        {
+          inputs: [],
           name: "NotOrgManager",
           type: "error",
         },
@@ -440,7 +445,7 @@ const deployedContracts = {
           inputs: [
             {
               internalType: "enum PostOpMode",
-              name: "",
+              name: "mode",
               type: "uint8",
             },
             {
@@ -451,6 +456,11 @@ const deployedContracts = {
             {
               internalType: "uint256",
               name: "actualGasCost",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "",
               type: "uint256",
             },
           ],
@@ -561,14 +571,9 @@ const deployedContracts = {
                   type: "bytes",
                 },
                 {
-                  internalType: "uint256",
-                  name: "callGasLimit",
-                  type: "uint256",
-                },
-                {
-                  internalType: "uint256",
-                  name: "verificationGasLimit",
-                  type: "uint256",
+                  internalType: "bytes32",
+                  name: "accountGasLimits",
+                  type: "bytes32",
                 },
                 {
                   internalType: "uint256",
@@ -576,14 +581,9 @@ const deployedContracts = {
                   type: "uint256",
                 },
                 {
-                  internalType: "uint256",
-                  name: "maxFeePerGas",
-                  type: "uint256",
-                },
-                {
-                  internalType: "uint256",
-                  name: "maxPriorityFeePerGas",
-                  type: "uint256",
+                  internalType: "bytes32",
+                  name: "gasFees",
+                  type: "bytes32",
                 },
                 {
                   internalType: "bytes",
@@ -596,7 +596,7 @@ const deployedContracts = {
                   type: "bytes",
                 },
               ],
-              internalType: "struct UserOperation",
+              internalType: "struct PackedUserOperation",
               name: "userOp",
               type: "tuple",
             },
