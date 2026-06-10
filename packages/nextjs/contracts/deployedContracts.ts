@@ -2421,7 +2421,7 @@ const deployedContracts = {
   },
   84532: {
     CGComponentFactory: {
-      address: "0x3F4331C1b059A7ED05c96aD1CD0802b00Bfd65f0",
+      address: "0xe51b56683088A44334f91182Ff772f72E2DAd2Fc",
       abi: [
         {
           inputs: [
@@ -2507,10 +2507,10 @@ const deployedContracts = {
         },
       ],
       inheritedFunctions: {},
-      deployedOnBlock: 40861437,
+      deployedOnBlock: 42670689,
     },
     CGPaymaster: {
-      address: "0xe4E02848DcDA529d3F5045B50c99044095cE4112",
+      address: "0x3C3E71af86013738Ed4b498B973F8b1e515782a5",
       abi: [
         {
           inputs: [
@@ -2557,6 +2557,11 @@ const deployedContracts = {
         {
           inputs: [],
           name: "InvalidCallTarget",
+          type: "error",
+        },
+        {
+          inputs: [],
+          name: "InvalidPaymasterData",
           type: "error",
         },
         {
@@ -2854,7 +2859,7 @@ const deployedContracts = {
           inputs: [
             {
               internalType: "enum PostOpMode",
-              name: "",
+              name: "mode",
               type: "uint8",
             },
             {
@@ -2865,6 +2870,11 @@ const deployedContracts = {
             {
               internalType: "uint256",
               name: "actualGasCost",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "",
               type: "uint256",
             },
           ],
@@ -2975,14 +2985,9 @@ const deployedContracts = {
                   type: "bytes",
                 },
                 {
-                  internalType: "uint256",
-                  name: "callGasLimit",
-                  type: "uint256",
-                },
-                {
-                  internalType: "uint256",
-                  name: "verificationGasLimit",
-                  type: "uint256",
+                  internalType: "bytes32",
+                  name: "accountGasLimits",
+                  type: "bytes32",
                 },
                 {
                   internalType: "uint256",
@@ -2990,14 +2995,9 @@ const deployedContracts = {
                   type: "uint256",
                 },
                 {
-                  internalType: "uint256",
-                  name: "maxFeePerGas",
-                  type: "uint256",
-                },
-                {
-                  internalType: "uint256",
-                  name: "maxPriorityFeePerGas",
-                  type: "uint256",
+                  internalType: "bytes32",
+                  name: "gasFees",
+                  type: "bytes32",
                 },
                 {
                   internalType: "bytes",
@@ -3010,7 +3010,7 @@ const deployedContracts = {
                   type: "bytes",
                 },
               ],
-              internalType: "struct UserOperation",
+              internalType: "struct PackedUserOperation",
               name: "userOp",
               type: "tuple",
             },
@@ -3070,10 +3070,10 @@ const deployedContracts = {
         renounceOwnership: "@openzeppelin/contracts/access/Ownable.sol",
         transferOwnership: "@openzeppelin/contracts/access/Ownable.sol",
       },
-      deployedOnBlock: 40861725,
+      deployedOnBlock: 42670703,
     },
     CGProgramFactory: {
-      address: "0x7756b2e513Ad5f28E521d0bB73b439684ab0e55a",
+      address: "0x8c2242B252Ad5a328a457aea10F18A9C4cb13395",
       abi: [
         {
           inputs: [
@@ -3294,10 +3294,10 @@ const deployedContracts = {
         renounceOwnership: "@openzeppelin/contracts/access/Ownable.sol",
         transferOwnership: "@openzeppelin/contracts/access/Ownable.sol",
       },
-      deployedOnBlock: 40861440,
+      deployedOnBlock: 42670690,
     },
     CGRegistry: {
-      address: "0x55e8A9b0897bCEbA1aC628c1D9A7814F51691c90",
+      address: "0xB6D6441b7FfE76de5923E6C048cDa60D73ec1B59",
       abi: [
         {
           inputs: [
@@ -3599,7 +3599,7 @@ const deployedContracts = {
         renounceOwnership: "@openzeppelin/contracts/access/Ownable.sol",
         transferOwnership: "@openzeppelin/contracts/access/Ownable.sol",
       },
-      deployedOnBlock: 40861465,
+      deployedOnBlock: 42670691,
     },
   },
   5042002: {

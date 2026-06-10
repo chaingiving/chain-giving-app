@@ -7,7 +7,7 @@ import { type Address as ViemAddress, getAddress } from "viem";
 import { CheckCircleIcon, DocumentDuplicateIcon, WalletIcon } from "@heroicons/react/24/outline";
 import { AuthProviderInfo, SignOutButton } from "~~/components/AuthSession";
 import { BlockieAvatar } from "~~/components/scaffold-eth";
-import { useCopyToClipboard, useTargetNetwork } from "~~/hooks/scaffold-eth";
+import { useCopyToClipboard, useNetworkHref, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import scaffoldConfig from "~~/scaffold.config";
 import { getBlockExplorerAddressLink } from "~~/utils/scaffold-eth";
 
@@ -58,6 +58,7 @@ const PlainAddress = ({ address, explorerLink }: { address: ViemAddress; explore
 
 export const AccountCard = ({ address, onLinkClick }: AccountCardProps) => {
   const { targetNetwork } = useTargetNetwork();
+  const networkHref = useNetworkHref();
   const explorerLink = getBlockExplorerAddressLink(targetNetwork, address);
 
   return (
@@ -99,7 +100,7 @@ export const AccountCard = ({ address, onLinkClick }: AccountCardProps) => {
       )}
       <AuthProviderInfo className="justify-center" />
       <div className="flex flex-wrap items-center justify-center gap-2">
-        <Link href={`/wallet/${address}`} className="btn btn-sm btn-outline gap-2" onClick={onLinkClick}>
+        <Link href={networkHref(`/wallet/${address}`)} className="btn btn-sm btn-outline gap-2" onClick={onLinkClick}>
           <WalletIcon className="h-4 w-4" />
           View Wallet
         </Link>

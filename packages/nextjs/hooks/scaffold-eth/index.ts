@@ -4,6 +4,7 @@ export * from "./useCopyToClipboard";
 export * from "./useDeployedContractInfo";
 export * from "./useFetchBlocks";
 export * from "./useNetworkColor";
+export * from "./useNetworkHref";
 export * from "./useOutsideClick";
 export * from "./useScaffoldContract";
 export * from "./useScaffoldEventHistory";

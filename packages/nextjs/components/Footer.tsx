@@ -6,6 +6,7 @@ import { CurrencyDollarIcon, MagnifyingGlassIcon } from "@heroicons/react/24/out
 import { HeartIcon } from "@heroicons/react/24/outline";
 import { SwitchTheme } from "~~/components/SwitchTheme";
 import { Faucet } from "~~/components/scaffold-eth";
+import { useNetworkHref } from "~~/hooks/scaffold-eth/useNetworkHref";
 import { useTargetNetwork } from "~~/hooks/scaffold-eth/useTargetNetwork";
 
 /**
@@ -13,6 +14,7 @@ import { useTargetNetwork } from "~~/hooks/scaffold-eth/useTargetNetwork";
  */
 export const Footer = () => {
   const { targetNetwork } = useTargetNetwork();
+  const networkHref = useNetworkHref();
   const isLocalNetwork = targetNetwork.id === hardhat.id;
   const { price: nativeCurrencyPrice } = useFetchNativeCurrencyPrice();
 
@@ -32,7 +34,11 @@ export const Footer = () => {
             {isLocalNetwork && (
               <>
                 <Faucet />
-                <Link href="/blockexplorer" passHref className="btn btn-primary btn-sm font-normal gap-1">
+                <Link
+                  href={networkHref("/blockexplorer")}
+                  passHref
+                  className="btn btn-primary btn-sm font-normal gap-1"
+                >
                   <MagnifyingGlassIcon className="h-4 w-4" />
                   <span>Block Explorer</span>
                 </Link>

@@ -1,13 +1,13 @@
 "use client";
 
 // @refresh reset
-import { usePathname } from "next/navigation";
 import { AddressInfoDropdown } from "./AddressInfoDropdown";
 import { WrongNetworkDropdown } from "./WrongNetworkDropdown";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { Address } from "viem";
 import { WalletIcon } from "@heroicons/react/24/outline";
 import { useTargetNetwork } from "~~/hooks/scaffold-eth/useTargetNetwork";
+import { useIsHomePage } from "~~/hooks/useIsHomePage";
 import scaffoldConfig from "~~/scaffold.config";
 
 type Props = {
@@ -20,7 +20,7 @@ type Props = {
  */
 export const RainbowKitCustomConnectButton = ({ hideOnHome = false, size = "sm" }: Props) => {
   const { targetNetwork } = useTargetNetwork();
-  const pathname = usePathname();
+  const isHome = useIsHomePage();
   const btnSize = size === "md" ? "btn-md" : "btn-sm";
 
   return (
@@ -29,7 +29,7 @@ export const RainbowKitCustomConnectButton = ({ hideOnHome = false, size = "sm" 
         const connected = mounted && account && chain;
 
         if (!connected) {
-          if (hideOnHome && pathname === "/") return null;
+          if (hideOnHome && isHome) return null;
           return (
             <button className={`btn btn-primary ${btnSize} gap-2`} onClick={openConnectModal} type="button">
               <WalletIcon className="h-4 w-4" />
